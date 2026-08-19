@@ -903,7 +903,225 @@ means."
 
 ---
 
-## 19. Storage Architecture
+## 19. Science Engine
+
+Milestone 7. Turns stored evidence into defensible, scoped, revisable
+conclusions — deterministically, with no LLM anywhere in the path.
+
+Kairos must never reduce analysis to *"the post got a lot of views."* The
+scientific question is: **compared with what relevant baseline or control
+did this result differ, by how much, for which metric, under what scope,
+with how much evidence, and what conclusion is justified?**
+
+### The evidence ladder — never skip a rung
+
+```
+RAW OBSERVATION          — AnalyticalObservation (read model)
+        ↓
+COMPARISON               — ComparisonResult
+        ↓
+REPEATED EVIDENCE        — HypothesisEvidence, accumulated
+        ↓
+HYPOTHESIS EVALUATION    — HypothesisEvaluation
+        ↓
+SCOPED FINDING           — Finding
+        ↓
+REVALIDATION             — FindingFreshness / RevalidationCandidate
+```
+
+Nothing jumps from observation straight to finding. A single breakout post
+is one comparison, not a validated finding.
+
+### The unified analytical read model
+
+Milestone 6 deliberately left `PostMeasurement` and `ExperimentObservation`
+as parallel stored types. `science/readModel.ts` projects both — plus
+`AttributionEvent`, where it legitimately evidences a business metric —
+into `AnalyticalObservation` rows on demand. These are **pure projections**:
+the source records are never mutated, re-saved or reconciled, and every row
+carries `sourceType` + `sourceRecordId` so any conclusion traces back to
+exact stored evidence. A metric absent from a stored result produces **no
+row at all** — missing never becomes a zero that a baseline would average
+in.
+
+### Baselines and outlier robustness
+
+`calculateProfileBaseline` computes `sampleSize`, `median`, `mean`,
+`standardDeviation` and `window` for one profile/metric/scope. **Median is
+the primary central tendency, deliberately.** Social results are
+heavy-tailed: one viral post drags the mean far from anything typical while
+barely moving the median. Standard deviation is `undefined` below two
+values — reporting `0` would falsely imply certainty. Below
+`policy.minimumBaselineSample` the baseline is returned as `null` rather
+than as a falsely precise number.
+
+### Science policy — thresholds are choices, not laws
+
+`SciencePolicy` makes every threshold configurable:
+`minimumBaselineSample`, `minimumHypothesisSample`, `minimumPairedSample`,
+`breakoutThreshold`, `failureThreshold`, `minimumConfidenceForFinding`,
+`revalidationWindowDays`, `decayWindowDays`. `DEFAULT_SCIENCE_POLICY`
+supplies conservative starting values.
+
+**These defaults are operational starting points, not scientific laws.**
+"20 posts is enough" is not a fact about the universe; it is a policy choice
+that should be revisited per profile, per platform, and as evidence
+accumulates.
+
+### Objective → metric mapping
+
+`DEFAULT_OBJECTIVE_METRICS` is an explicit, inspectable, overrideable table
+rather than buried if/else:
+
+| Objective | Metrics |
+| --- | --- |
+| reach | impressions, views |
+| conversation | replies, comments |
+| amplification | reposts, shares |
+| followers | followersGained |
+| traffic | clicks, profileVisits |
+| lead | leads |
+| sale | sales |
+| revenue | revenue |
+| retention | revenue *(no retention metric exists in `PerformanceMetric` yet — the proxy is named explicitly rather than silently invented)* |
+
+This is what stops "lots of views" counting as success for a revenue
+objective. Per §8: deeper-funnel data is **not** universally stronger
+evidence — the relevant metric is the one matching the hypothesis, the
+dependent variable and the objective. Revenue evidence answers a revenue
+question; reply evidence answers a conversation question.
+
+### Comparison and winner/failure detection
+
+`ComparisonResult` records observed value, baseline median, absolute and
+relative difference, `EffectSize`, direction (`above` / `below` /
+`near_baseline`) and its own limitations. **Direction is not a verdict** —
+`above` baseline is not automatically a winner.
+
+`assessExperimentOutcome` produces `winner` / `failure` / `neutral` /
+`insufficient_evidence`, and requires the metric to be one the experiment's
+registered objective maps to, an adequate baseline sample, and an effect
+past `breakoutThreshold`/`failureThreshold`. The baseline deliberately
+excludes the experiment's own observations — a result is compared against
+what normal looks like *without* it.
+
+### No p-hacking / no metric switching
+
+An experiment registers its objective up front, and its verdict is decided
+**solely** on the metrics that objective maps to. If an experiment testing
+clicks sees replies explode while clicks stay flat, the conclusion is that
+the click hypothesis is **not supported**. The reply movement appears under
+`exploratoryComparisons` — visible, useful for generating future
+hypotheses, and structurally incapable of overturning the registered
+result. Kairos never retroactively declares "the post won because replies
+increased."
+
+### Missing is not zero
+
+If the dependent metric was never reported, the verdict is
+`insufficient_evidence` — never `failure`. An unavailable platform metric
+is a gap in evidence, not evidence of poor performance.
+
+### Paired experiments
+
+`analyzePairedExperiments` compares arms sharing a `pairId`, with arms
+sorted deterministically by variant label. Every single-pair result carries
+the `single_pair` limitation, and a topic mismatch between arms surfaces as
+`insufficient_controls`. `policy.minimumPairedSample` governs when paired
+evidence may support a finding — one pair is evidence, never proof.
+
+### Hypothesis evidence and evaluation
+
+`HypothesisEvidence` records one traceable piece of support or
+contradiction — direction, metric, effect size, `supports`, and the source
+ids it came from — so a hypothesis is never a bare list of experiment ids
+with no explanation of why each one counted.
+
+`evaluateHypothesis` returns `proposed` / `testing` / `supported` /
+`rejected` / `inconclusive`. **`inconclusive` is a first-class outcome**,
+not a failure to decide: it is the honest answer when evidence is plentiful
+but conflicting, and it is deliberately distinct from `rejected` ("we
+tested it and it is false"). Binary supported/rejected decisions are never
+forced.
+
+### Contradictory evidence is permanent
+
+If 12 experiments support a hypothesis and 5 contradict it, Kairos knows
+both. Contradicting `HypothesisEvidence` records are **never deleted** when
+confidence later rises, and confidence is explicitly able to fall.
+
+### Operational confidence
+
+`computeOperationalConfidence` returns a normalized 0..1 score from three
+documented, deterministic terms: evidence volume (saturating), directional
+consistency (evidence split 6/5 contributes nothing however plentiful), and
+a small effect-magnitude bonus.
+
+This is an **operational confidence score, not a statistical probability**.
+Kairos does not implement Bayesian inference, so it does not claim to.
+
+### Effect size
+
+Reuses the existing `EffectSize`. Zero baselines are handled safely:
+`relativeChange` returns `undefined` rather than `Infinity`/`NaN`, and the
+field is omitted entirely rather than carrying a non-finite value that
+would poison downstream threshold comparisons.
+
+### Finding emission and scope discipline
+
+`emitFinding` creates or updates a `Finding` **only** when policy
+thresholds are met, returning `null` otherwise rather than emitting a weak
+conclusion. Findings begin `promising` and reach `validated` only past
+`minimumConfidenceForFinding` — one breakout post never validates anything.
+
+**Scope defaults to the narrowest justified level: the profile.** A broader
+scope must be passed explicitly by a caller that actually has cross-profile
+evidence; a single profile's result can never widen itself into a niche,
+platform or global claim. Segment-specific evidence stays profile+segment
+scoped. Cross-profile synthesis is a later milestone the model is built to
+accommodate, not something this engine performs.
+
+Wording is composed deterministically and conservatively — *"Question-hook
+experiments were associated with higher reply rate for this profile under
+the tested conditions"*, never *"Questions always boost Threads reach."* No
+LLM is involved in any statement.
+
+### Observed-association safeguard
+
+An `ObservedAssociation` (§17) may generate or support a hypothesis
+**candidate**, but can never itself justify a causal `Finding` — causal
+support requires controlled experimental evidence.
+`assertNotCausalFromObservation` enforces this at the service layer rather
+than leaving it to convention. Analysis never mutates the underlying
+`StrategyClaim`.
+
+### Decay and revalidation
+
+`assessFindingFreshness` returns `current` / `due_for_revalidation` /
+`decaying` from `lastValidatedAt` against the policy windows.
+`identifyRevalidationCandidates` returns ids and reasons only — **no posts
+are scheduled and no strategy is changed**; the Battle Engine consumes this
+later. Nothing is ever deleted: rejected and decaying findings are retained
+as knowledge.
+
+### Limitations are never hidden
+
+Every analysis can express `AnalysisLimitation`s: `small_sample`,
+`missing_metric`, `no_baseline`, `unmatched_comparison`,
+`mixed_account_stages`, `large_variance`, `unknown_attribution`,
+`insufficient_controls`, `single_pair`, `platform_change`. An analysis that
+cannot be trusted says so in its own output.
+
+### Science report
+
+`ScienceReport` is a machine-readable analysis result — subject, objective,
+metric, baseline, comparisons, evidence summary, conservative conclusion,
+verdict, confidence, limitations and full lineage — suitable for a future
+dashboard. It is not UI, and this milestone builds none.
+
+---
+
+## 20. Storage Architecture
 
 Kairos already has a storage port at `src/storage/store.ts` with a JSONL
 adapter (`src/storage/jsonlStore.ts`), designed so a Postgres adapter can
@@ -911,15 +1129,23 @@ replace it without touching callers.
 
 Intelligence storage follows the **same discipline**, built in Milestone 2
 (`src/intelligence/storage/store.ts` + `jsonlIntelligenceStore.ts`) and
-extended by Milestone 4 (audience stores), Milestone 5 (research stores) and
-Milestone 6 (measurement/attribution stores):
+extended by Milestone 4 (audience stores), Milestone 5 (research stores),
+Milestone 6 (measurement/attribution stores) and Milestone 7 (hypothesis
+evidence):
 
 - an intelligence port defined as an interface (`IntelligenceStore`),
 - JSONL-on-disk as the first adapter (append-only; mutable knowledge is
   latest-line-wins per `id`, raw evidence — `ExperimentObservation`,
   `AudienceSignal`, `SegmentPerformance`, `CreatorOsMeasurementSnapshot`,
-  `PostMeasurement`, `ProfileMeasurementSnapshot` — is never collapsed),
+  `PostMeasurement`, `ProfileMeasurementSnapshot`, `HypothesisEvidence` —
+  is never collapsed),
 - a durable adapter later, without changing callers.
+
+`ComparisonResult` and `ScienceReport` are deliberately **not** persisted:
+both are derived calculations, recomputable at any time from the
+observations and baselines they came from. Only the comparison ids
+referenced by a stored `HypothesisEvidence` record matter for audit, and
+those travel on the evidence record itself.
 
 All intelligence domain types therefore carry a stable `id` (or, for
 `PerformanceBaseline`, a stable derived key) and are plain, serializable,
@@ -929,25 +1155,28 @@ fields.
 **Milestone 1 shipped types only. Milestone 2 added the store. Milestone 3
 added the onboarding adapter. Milestone 4 added the audience stores.
 Milestone 5 added the research stores. Milestone 6 added the
-measurement/attribution stores.**
+measurement/attribution stores. Milestone 7 added the hypothesis-evidence
+store.**
 
 ---
 
-## 20. Battle Engine (Future Module)
+## 21. Battle Engine (Future Module)
 
 The Battle Engine is the future component that turns the domain model into
 continuous competition: pairing variants, allocating posting capacity between
 exploitation and exploration according to `experimentMode`, promoting winners,
 retiring losers and scheduling revalidation of decaying findings.
 
-It is deliberately **out of scope** through Milestone 6. The domain model is
+It is deliberately **out of scope** through Milestone 7. The domain model is
 built so the Battle Engine can be added as a consumer — `pairId`, `variant`,
-`controlVariable`, `testVariables`, `experimentMode` and `currentAllocations`
-all exist for it — without any change to the types below it.
+`controlVariable`, `testVariables`, `experimentMode`,
+`currentAllocations`, and now the Science Engine's
+`identifyRevalidationCandidates` output — without any change to the types
+below it.
 
 ---
 
-## 21. Development Milestones
+## 22. Development Milestones
 
 | Milestone | Scope | Status |
 | --- | --- | --- |
@@ -956,16 +1185,17 @@ all exist for it — without any change to the types below it.
 | 3 — Profile Onboarding Mapping | Adapter from onboarding answers → `SocialProfile` + `ProfileBrain` init | Done |
 | 4 — Audience Brain | Audience signals, observed segments, segment findings, segment performance, declared-vs-observed comparison | Done |
 | 5 — Strategy & Research Intelligence | Research sources, strategy claims, observed associations, causal status, provenance, `StrategyPrinciple` evidence links | Done |
-| **6 — Measurement Ingestion & Attribution** | Raw CreatorOS snapshots, normalized post/profile observations, first-party attribution events, tracking context, raw/normalized lineage | **This milestone** |
-| 7 — Science Engine | Baseline calculation, hypothesis lifecycle, finding emission, decay, pattern detection, audience classification, claim → hypothesis mapping | Planned |
-| 8 — Battle Engine | Variant allocation, winner promotion, revalidation scheduling | Planned |
-| 9 — Social Genome | Commercial dashboard/product surface | Planned |
+| 6 — Measurement Ingestion & Attribution | Raw CreatorOS snapshots, normalized post/profile observations, first-party attribution events, tracking context, raw/normalized lineage | Done |
+| **7 — Science Engine** | Baselines, comparisons, objective-metric policy, paired analysis, hypothesis evidence & evaluation, operational confidence, finding emission, decay/revalidation, science reports | **This milestone** |
+| 8 — Adaptive Strategy | Turning findings into next-action recommendations | Planned |
+| 9 — Battle Engine | Variant allocation, winner promotion, revalidation scheduling | Planned |
+| 10 — Social Genome | Commercial dashboard/product surface | Planned |
 
 Each milestone is additive and must leave CreatorOS execution untouched.
 
 ---
 
-## 22. Non-Goals
+## 23. Non-Goals
 
 Explicitly **not** part of Kairos Intelligence, now or later:
 
@@ -976,7 +1206,7 @@ Explicitly **not** part of Kairos Intelligence, now or later:
 - A parallel platform abstraction that diverges from the CreatorOS platform
   matrix.
 - Ecommerce/payment integration (offers are descriptive only through
-  Milestone 6; `AttributionEvent` records outcomes, it does not process
+  Milestone 7; `AttributionEvent` records outcomes, it does not process
   payments).
 - Individual psychological dossiers or sensitive-trait inference of any kind
   (race/ethnicity, religion, sexual orientation, medical conditions,
@@ -985,6 +1215,12 @@ Explicitly **not** part of Kairos Intelligence, now or later:
   validated — see §17's core rule.
 - Treating a CreatorOS platform analytics response as proof of revenue —
   see §18's business-outcomes rule.
+- Declaring a winner by searching across metrics after the fact, or letting
+  a secondary metric overturn a registered dependent metric — see §19's
+  no-p-hacking rule.
+- Deriving a causal `Finding` from an `ObservedAssociation` without
+  controlled experimental evidence — see §19's observed-association
+  safeguard.
 
 Explicitly **not** part of Milestone 4:
 
@@ -1020,9 +1256,26 @@ Explicitly **not** part of Milestone 6:
 - Any modification to CreatorOS's analytics retrieval, posting, or account
   contracts.
 
+Explicitly **not** part of Milestone 7:
+
+- Any LLM call, embedding, or generated prose — every statement the engine
+  produces is composed deterministically and conservatively.
+- Content generation of any kind.
+- Automatic strategy change: `identifyRevalidationCandidates` returns ids
+  and reasons only; nothing is scheduled, allocated or published.
+- Cross-profile synthesis — findings default to the narrowest justified
+  (profile) scope and cannot widen themselves.
+- Academically rigorous statistical inference: `computeOperationalConfidence`
+  is an operational score with documented deterministic rules, explicitly
+  not a Bayesian posterior or a p-value.
+- Multi-touch attribution modelling, pattern detection across profiles, or
+  audience auto-classification.
+- Persisting derived calculations (`ComparisonResult`, `ScienceReport`)
+  that are recomputable from stored evidence.
+
 Explicitly **not** part of any milestone so far:
 
-- The Science Engine, Adaptive Strategy, the Battle Engine, Social Genome.
+- Adaptive Strategy, the Battle Engine, Social Genome.
 - Onboarding changes, dashboard changes, CreatorOS execution changes.
 
 ---

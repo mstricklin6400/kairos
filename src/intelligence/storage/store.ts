@@ -73,6 +73,22 @@
  * - Outside knowledge (any `StrategyClaim`) never becomes a `Finding`
  *   automatically — nothing in this store writes to the Findings store.
  *
+ * SOURCE-OF-TRUTH RULES — the Science Engine (Milestone 7)
+ * ------------------------------------------------------------------------
+ * - `HypothesisEvidence` is append-preserving audit evidence: one
+ *   traceable record per piece of support or contradiction, keyed by its
+ *   own `id`. Contradictory evidence (`supports: false`) is stored
+ *   permanently and is NEVER deleted when a hypothesis's confidence later
+ *   rises — confidence must be able to fall.
+ * - `ComparisonResult` is deliberately NOT persisted: it is a derived
+ *   calculation, recomputable at any time from the observations and
+ *   baseline it came from. Only the comparison ids referenced by a stored
+ *   `HypothesisEvidence` record matter for audit, and those travel on the
+ *   evidence record itself.
+ * - The engine never mutates a `PostMeasurement`, `ExperimentObservation`,
+ *   `StrategyClaim` or `AttributionEvent` while analyzing it. Analysis
+ *   reads; it does not rewrite its own inputs.
+ *
  * SOURCE-OF-TRUTH RULES — Measurement Ingestion & Attribution (Milestone 6)
  * ------------------------------------------------------------------------
  * - `CreatorOsMeasurementSnapshot` is raw evidence: keyed by its own `id`
@@ -137,6 +153,7 @@ import type {
   PostMeasurement,
   ProfileMeasurementSnapshot,
 } from '../measurement/types.js';
+import type { HypothesisEvidence } from '../science/analysisTypes.js';
 
 export interface ProfileQuery {
   readonly platform?: Platform;
@@ -259,6 +276,15 @@ export interface AttributionEventQuery {
   readonly limit?: number;
 }
 
+export interface HypothesisEvidenceQuery {
+  readonly hypothesisId?: string;
+  readonly profileId?: string;
+  readonly experimentId?: string;
+  /** Restrict to supporting (`true`) or contradicting (`false`) evidence. */
+  readonly supports?: boolean;
+  readonly limit?: number;
+}
+
 export interface IntelligenceStore {
   /** Upsert by id. */
   saveProfile(profile: SocialProfile): Promise<void>;
@@ -356,4 +382,8 @@ export interface IntelligenceStore {
   saveAttributionEvent(event: AttributionEvent): Promise<void>;
   getAttributionEvent(id: string): Promise<AttributionEvent | null>;
   listAttributionEvents(query: AttributionEventQuery): Promise<AttributionEvent[]>;
+
+  /** Append-preserving audit evidence. Contradicting records are never deleted — see module doc. */
+  saveHypothesisEvidence(evidence: HypothesisEvidence): Promise<void>;
+  listHypothesisEvidence(query: HypothesisEvidenceQuery): Promise<HypothesisEvidence[]>;
 }

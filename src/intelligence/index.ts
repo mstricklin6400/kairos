@@ -119,6 +119,28 @@ export type {
 } from './measurement/types.js';
 
 export type {
+  AnalysisLimitation,
+  AnalyticalObservation,
+  ComparisonDirection,
+  ComparisonResult,
+  FindingEmissionContext,
+  FindingFreshness,
+  HypothesisEvaluation,
+  HypothesisEvidence,
+  ObjectiveMetricPolicy,
+  ObservationSourceType,
+  OutcomeAssessment,
+  OutcomeVerdict,
+  PairedComparison,
+  RevalidationCandidate,
+  ScienceReport,
+  ScienceSubjectType,
+  SciencePolicy,
+} from './science/analysisTypes.js';
+
+export { DEFAULT_OBJECTIVE_METRICS, DEFAULT_SCIENCE_POLICY } from './science/analysisTypes.js';
+
+export type {
   AudienceIntelligence,
   NicheIntelligence,
   ProfileBrain,

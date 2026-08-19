@@ -30,8 +30,10 @@ import type {
   PostMeasurement,
   ProfileMeasurementSnapshot,
 } from '../measurement/types.js';
+import type { HypothesisEvidence } from '../science/analysisTypes.js';
 import type {
   AttributionEventQuery,
+  HypothesisEvidenceQuery,
   AudienceSignalQuery,
   BaselineQuery,
   ExperimentQuery,
@@ -123,6 +125,10 @@ export function profileMeasurementSnapshotsPath(workspaceRoot: string): string {
 
 export function attributionEventsPath(workspaceRoot: string): string {
   return join(intelligenceDir(workspaceRoot), 'attribution-events.jsonl');
+}
+
+export function hypothesisEvidencePath(workspaceRoot: string): string {
+  return join(intelligenceDir(workspaceRoot), 'hypothesis-evidence.jsonl');
 }
 
 async function appendLine(path: string, entry: unknown): Promise<void> {
@@ -514,5 +520,19 @@ export class JsonlIntelligenceStore implements IntelligenceStore {
     if (query.to) events = events.filter((e) => e.occurredAt <= query.to!);
     events.sort((a, b) => (a.occurredAt < b.occurredAt ? -1 : 1));
     return events.slice(0, query.limit ?? 500);
+  }
+
+  async saveHypothesisEvidence(evidence: HypothesisEvidence): Promise<void> {
+    await appendLine(hypothesisEvidencePath(this.workspaceRoot), evidence);
+  }
+
+  async listHypothesisEvidence(query: HypothesisEvidenceQuery = {}): Promise<HypothesisEvidence[]> {
+    let evidence = await readLatestByKey<HypothesisEvidence>(hypothesisEvidencePath(this.workspaceRoot), (e) => e.id);
+    if (query.hypothesisId) evidence = evidence.filter((e) => e.hypothesisId === query.hypothesisId);
+    if (query.profileId) evidence = evidence.filter((e) => e.profileId === query.profileId);
+    if (query.experimentId) evidence = evidence.filter((e) => e.experimentId === query.experimentId);
+    if (query.supports !== undefined) evidence = evidence.filter((e) => e.supports === query.supports);
+    evidence.sort((a, b) => (a.measuredAt < b.measuredAt ? -1 : 1));
+    return evidence.slice(0, query.limit ?? 500);
   }
 }
