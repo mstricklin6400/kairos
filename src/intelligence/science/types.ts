@@ -92,6 +92,25 @@ export interface ExperimentResult {
   readonly measuredAt?: IsoDateTime;
 }
 
+/**
+ * One raw, timestamped measurement of an `Experiment`. An experiment is
+ * routinely measured more than once (30 minutes, 2 hours, 24 hours, 72
+ * hours...); each measurement is its own immutable observation, keyed by its
+ * own `id`, so later measurements coexist with earlier ones instead of
+ * overwriting them.
+ *
+ * `Experiment.results` remains the experiment's own latest-known snapshot —
+ * a convenience field. This type is the full, append-only history that
+ * snapshot is drawn from, and is the one Milestone 2 storage treats as raw
+ * evidence.
+ */
+export interface ExperimentObservation {
+  readonly id: string;
+  readonly experimentId: string;
+  readonly measuredAt: IsoDateTime;
+  readonly metrics: ExperimentResult;
+}
+
 /** One deliberate, described publish whose purpose is to produce evidence. */
 export interface Experiment {
   readonly id: string;

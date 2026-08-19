@@ -1,10 +1,13 @@
 /**
- * Public surface of the Kairos intelligence layer.
- *
- * Milestone 1 is domain model only: types, plus one lookup table mapping
- * metrics to their measurement tier. No agents, no LLM calls, no persistence,
- * no execution — CreatorOS remains solely responsible for publishing,
+ * Public surface of the Kairos intelligence layer: domain types, plus one
+ * lookup table mapping metrics to their measurement tier. No agents, no LLM
+ * calls, no execution — CreatorOS remains solely responsible for publishing,
  * scheduling, authentication and platform API operations.
+ *
+ * Persistence for these types lives separately at `./storage/store.js`
+ * (the intelligence storage port) and `./storage/jsonlIntelligenceStore.js`
+ * (its JSONL adapter) — deliberately not re-exported here, so this file
+ * stays the domain-model surface and storage stays an explicit import.
  *
  * Import order below follows the dependency order of the modules
  * (common -> profiles -> performance -> science -> strategy); there are no
@@ -65,6 +68,7 @@ export type {
   Experiment,
   ExperimentDesign,
   ExperimentExecution,
+  ExperimentObservation,
   ExperimentResult,
   Finding,
   FindingStatus,
