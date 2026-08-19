@@ -10,9 +10,11 @@
  * stays the domain-model surface and storage stays an explicit import.
  *
  * Import order below follows the dependency order of the modules
- * (common -> profiles -> performance -> science -> audience -> strategy,
- * since `strategy/types.ts`'s `AudienceIntelligence` references
- * `audience/types.ts`'s `DeclaredAudienceComparison`); there are no cycles.
+ * (common -> profiles -> performance -> science -> audience -> research ->
+ * strategy, since `strategy/types.ts`'s `AudienceIntelligence` references
+ * `audience/types.ts`'s `DeclaredAudienceComparison`, and its
+ * `StrategyPrinciple` references claim ids conceptually owned by
+ * `research/types.ts`); there are no cycles.
  */
 
 export type {
@@ -91,6 +93,18 @@ export type {
   SegmentStatus,
   SignalClassificationRecord,
 } from './audience/types.js';
+
+export type {
+  AssertedEffect,
+  CausalStatus,
+  ClaimStatus,
+  ClaimType,
+  ObservedAssociation,
+  ResearchSource,
+  ResearchSourceType,
+  SourceLocator,
+  StrategyClaim,
+} from './research/types.js';
 
 export type {
   AudienceIntelligence,

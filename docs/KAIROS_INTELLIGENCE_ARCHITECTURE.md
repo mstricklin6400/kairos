@@ -562,7 +562,199 @@ No layer in this list silently overwrites another.
 
 ---
 
-## 17. Storage Architecture
+## 17. Strategy & Research Intelligence
+
+Milestone 5. A formal, provenance-aware system for learning FROM outside
+knowledge — marketers, agencies, courses, books, videos, communities,
+research reports, observational datasets, platform documentation, CreatorOS
+skills, internal strategy notes, and Kairos's own experiments — without ever
+treating that knowledge as established truth.
+
+### The core rule
+
+**Outside knowledge may generate hypotheses. Outside knowledge does not
+automatically become a validated Kairos `Finding`.** Social-media advice is
+full of opinions presented as fact, survivor bias, correlations presented as
+causation, platform-specific advice generalized universally, outdated
+advice, niche-specific results treated as universal, and unreported
+failures. Kairos's job is to keep these distinguishable, not to launder them
+into certainty.
+
+### The ladder — do not collapse these levels
+
+```
+SOMEONE SAYS IT
+        ↓
+CLAIM                          — StrategyClaim
+
+DATA SHOWS AN ASSOCIATION
+        ↓
+OBSERVED ASSOCIATION           — ObservedAssociation (a kind of claim)
+
+KAIROS DESIGNS A TEST
+        ↓
+HYPOTHESIS                     — Hypothesis (science/types.ts)
+
+KAIROS RUNS CONTROLLED EVIDENCE
+        ↓
+EXPERIMENT                     — Experiment (science/types.ts)
+
+EVIDENCE ACCUMULATES
+        ↓
+FINDING                        — Finding (science/types.ts)
+```
+
+Someone saying it is not data showing an association. Data showing an
+association is not a designed test. A designed test is not yet evidence. A
+single experiment is not yet an accumulated finding. Nothing in this
+milestone skips a rung.
+
+### The knowledge pipeline
+
+```
+ResearchSource → StrategyClaim → StrategyPrinciple → possible Hypothesis
+→ future Experiment → Finding
+```
+
+- **`ResearchSource`** — where information came from: a `ResearchSourceType`
+  (`creator`, `marketer`, `agency`, `course`, `book`, `video`, `community`,
+  `research_report`, `observational_dataset`, `platform_documentation`,
+  `creatoros_skill`, `internal_note`, `kairos_experiment`, `other`), title,
+  author/publisher, URL, publish/access dates, and which platforms/niches it
+  discusses. Never deleted when outdated — see Strategy Decay below.
+- **`StrategyClaim`** — what that source asserted: "someone/something
+  asserts X," always traceable to exactly one `sourceId` (no orphan claims).
+  Carries a `ClaimType`, a `KnowledgeScope`, optional platform/niche/
+  objective/account-stage context, an `AssertedEffect`, a `CausalStatus`, a
+  `ClaimStatus` lifecycle, and — critically — `confidenceInExtraction`,
+  which means *"how confident are we that we represented the source
+  correctly,"* never *"how likely is the claim to be true."* Those two
+  questions are kept structurally separate.
+- **`StrategyPrinciple`** (`strategy/types.ts`) — the normalized candidate
+  concept Kairos can reason about, potentially supported by many
+  independent claims. Example: a marketer's advice, a CreatorOS skill, and
+  related platform documentation about the same underlying idea normalize
+  into one principle — *"relevant questions may increase conversation"* —
+  which is not itself any of those three claims, and is not synonymous with
+  any of them.
+- **`Hypothesis`** / **`Finding`** (`science/types.ts`) — a testable claim
+  designed for experimentation, and an evidence-backed conclusion from an
+  actual Kairos experiment. Only these two carry Kairos's own scientific
+  authority; nothing upstream of them does.
+
+### Claim types
+
+`playbook_claim` (advice from a marketer/course/agency/CreatorOS skill),
+`platform_claim` (an official platform statement about capability or
+behavior), `research_claim` (a finding from a report or study),
+`observed_association` (a correlation in data, no causal proof — see
+below), `experimental_claim` (produced from an experiment), `opinion`
+(interpretation or belief), `heuristic` (a rule of thumb). **The category
+alone implies nothing about causal status** — see Causal Status.
+
+### Observed associations
+
+"Creators with 500+ replies averaged 35.7% follower growth" is data. "Getting
+500 replies causes 35.7% follower growth" is a different, much stronger
+claim the first sentence does not support. `ObservedAssociation` keeps these
+apart structurally: `variablesObserved`, `populationDescription`,
+`sampleSize`, `timePeriod`, `effectOrAssociation`, `limitations`,
+`confoundersKnown`, and `causalClaim` — typed as the literal `false`, not
+`boolean`, so it is impossible to construct an `ObservedAssociation` that
+asserts causation.
+
+### Causal status
+
+`not_applicable` · `unproven` · `correlational` · `experimental_support` ·
+`causal_supported`. A source using causal language ("X causes Y") does not,
+by itself, earn `causal_supported` — `deriveDefaultCausalStatus`
+(`research/aggregate.ts`) never produces it, and ingestion validation
+actively rejects a caller asserting `causal_supported` on anything but an
+`experimental_claim`. Outside claims begin at `unproven` or `correlational`;
+only Kairos's own experimental evidence can move a claim further.
+
+### Claim status (not a scientific status)
+
+`captured` → `reviewed` → `candidate` → `mapped_to_hypothesis`, or
+`deprecated` / `rejected_as_source` / `superseded`. Deliberately not
+`FindingStatus` or `StrategyPrincipleStatus` — nothing in this vocabulary
+contains a "validated" state. A claim being `reviewed` means a human or
+process looked at it, nothing more.
+
+### Provenance and traceability
+
+Every claim answers "where did this idea come from" by construction:
+`sourceId` is required and validated against the `ResearchSource` store at
+ingestion. `SourceLocator` (`page`/`timestamp`/`section`) and a short
+`excerpt` (capped, attribution only) let a claim point precisely at where in
+a source it came from — this milestone supports traceability, not storing
+entire copyrighted books or courses as blobs.
+
+### Conflicting advice
+
+Two sources disagreeing — "post once daily" vs. "post 10 times daily" — are
+both kept. Storage is never "latest claim wins": every claim is its own
+record, upserted only by its own explicit id, so two independently sourced
+claims are always two provenance records, even when their text looks
+identical. `topicKey`, a caller-supplied, deterministically-matched string
+(plain equality, no semantic matching), lets conflicting claims cluster
+under a shared normalized topic before any `StrategyPrinciple` formally
+exists to group them (`groupClaimsByTopicKey`, `research/aggregate.ts`).
+Kairos does not decide which side is right here — that comes only through
+experimentation.
+
+### Scope — platform, niche, objective
+
+A Threads claim never silently becomes an all-platforms claim; a personal
+finance claim never silently becomes an all-niches claim; a claim with no
+stated objective never silently becomes "works in general." `StrategyClaim`
+preserves `platforms`, `niches` and `objectives` (`GrowthObjective`, reused
+rather than a second vocabulary) exactly as observed, and unknown scope
+stays unknown rather than being fabricated as broad or global. Global scope
+is itself an explicit, deliberate `KnowledgeScope` value — never a default
+assumed from absence.
+
+### CreatorOS skills as an input
+
+CreatorOS ships marketing skills. Kairos *consumes* them as a research
+input — `sourceType: 'creatoros_skill'` — and never duplicates or alters
+CreatorOS's own skill-delivery system. `ingestCreatorOsSkill`
+(`research/ingest.ts`) takes only a skill's own metadata (name, description,
+version) as plain strings; it does not read CreatorOS's skill files,
+installation state, or update mechanism, and cannot write to them.
+
+### Strategy decay
+
+Advice decays the same way findings do (§14). `ResearchSource` carries
+`publishedAt`, `accessedAt`, `lastReviewedAt`, `supersededBySourceId` and
+`deprecatedAt` — outdated research is marked, never deleted, so Kairos
+retains the historical record of what it used to rely on and why.
+`identifyStaleSources` (`research/aggregate.ts`) is a pure function of an
+explicit `now` and a max-age window — never the system clock read as a
+side effect.
+
+### Raw source vs. interpretation
+
+Same lineage discipline as Milestone 2's raw-evidence rule: `ResearchSource`
+is source metadata, `StrategyClaim` is the captured assertion,
+`StrategyPrinciple` is the normalized interpretation. **Changing a
+`StrategyPrinciple` must never rewrite the original `StrategyClaim`** — a
+principle's `supportingClaimIds`/`contradictingClaimIds` reference claims by
+id and are free to change as understanding evolves; the claim records
+underneath stay exactly as captured.
+
+### Deterministic ingestion, deterministic only
+
+`ingestResearchSource`/`ingestStrategyClaim` (`research/ingest.ts`) are the
+Milestone 5 entry points: validate, normalize (trim strings, normalize URLs,
+validate dates/confidence, check platforms against the existing platform
+matrix), persist through `IntelligenceStore`. No AI extraction, no web
+crawler, no PDF or transcript parser — a caller already has structured data.
+Those adapters are explicitly future-milestone work.
+
+---
+
+## 18. Storage Architecture
 
 Kairos already has a storage port at `src/storage/store.ts` with a JSONL
 adapter (`src/storage/jsonlStore.ts`), designed so a Postgres adapter can
@@ -570,7 +762,7 @@ replace it without touching callers.
 
 Intelligence storage follows the **same discipline**, built in Milestone 2
 (`src/intelligence/storage/store.ts` + `jsonlIntelligenceStore.ts`) and
-extended by Milestone 4 for the audience stores:
+extended by Milestone 4 (audience stores) and Milestone 5 (research stores):
 
 - an intelligence port defined as an interface (`IntelligenceStore`),
 - JSONL-on-disk as the first adapter (append-only; mutable knowledge is
@@ -584,35 +776,36 @@ JSON-round-trippable data. No classes, no methods, no non-serializable
 fields.
 
 **Milestone 1 shipped types only. Milestone 2 added the store. Milestone 3
-added the onboarding adapter. Milestone 4 added the audience stores.**
+added the onboarding adapter. Milestone 4 added the audience stores.
+Milestone 5 added the research stores.**
 
 ---
 
-## 18. Battle Engine (Future Module)
+## 19. Battle Engine (Future Module)
 
 The Battle Engine is the future component that turns the domain model into
 continuous competition: pairing variants, allocating posting capacity between
 exploitation and exploration according to `experimentMode`, promoting winners,
 retiring losers and scheduling revalidation of decaying findings.
 
-It is deliberately **out of scope** through Milestone 4. The domain model is
+It is deliberately **out of scope** through Milestone 5. The domain model is
 built so the Battle Engine can be added as a consumer — `pairId`, `variant`,
 `controlVariable`, `testVariables`, `experimentMode` and `currentAllocations`
 all exist for it — without any change to the types below it.
 
 ---
 
-## 19. Development Milestones
+## 20. Development Milestones
 
 | Milestone | Scope | Status |
 | --- | --- | --- |
 | 1 — Intelligence Foundation | Architecture doc + `src/intelligence/` domain model + tests | Done |
 | 2 — Intelligence Storage | Intelligence store port + JSONL adapter | Done |
 | 3 — Profile Onboarding Mapping | Adapter from onboarding answers → `SocialProfile` + `ProfileBrain` init | Done |
-| **4 — Audience Brain** | Audience signals, observed segments, segment findings, segment performance, declared-vs-observed comparison | **This milestone** |
-| 5 — Strategy & Research Intelligence | Niche/audience research process, playbook ingestion | Planned |
+| 4 — Audience Brain | Audience signals, observed segments, segment findings, segment performance, declared-vs-observed comparison | Done |
+| **5 — Strategy & Research Intelligence** | Research sources, strategy claims, observed associations, causal status, provenance, `StrategyPrinciple` evidence links | **This milestone** |
 | 6 — Measurement Ingestion | CreatorOS analytics → `ExperimentResult`, baseline calculation | Planned |
-| 7 — Science Engine | Hypothesis lifecycle, finding emission, decay, pattern detection, audience classification | Planned |
+| 7 — Science Engine | Hypothesis lifecycle, finding emission, decay, pattern detection, audience classification, claim → hypothesis mapping | Planned |
 | 8 — Battle Engine | Variant allocation, winner promotion, revalidation scheduling | Planned |
 | 9 — Social Genome | Commercial dashboard/product surface | Planned |
 
@@ -620,21 +813,23 @@ Each milestone is additive and must leave CreatorOS execution untouched.
 
 ---
 
-## 20. Non-Goals
+## 21. Non-Goals
 
 Explicitly **not** part of Kairos Intelligence, now or later:
 
 - Re-implementing anything CreatorOS does: account connection, authentication,
   scheduling, publishing, platform API calls, comment/DM delivery, webhooks,
-  analytics retrieval.
+  analytics retrieval, skill delivery/installation/updates.
 - Replacing or shadowing `creatorOsAccountId`.
 - A parallel platform abstraction that diverges from the CreatorOS platform
   matrix.
 - Ecommerce/payment integration (offers are descriptive only through
-  Milestone 4).
+  Milestone 5).
 - Individual psychological dossiers or sensitive-trait inference of any kind
   (race/ethnicity, religion, sexual orientation, medical conditions,
   political affiliation, criminal history) — see §16's privacy boundary.
+- Treating outside knowledge (any `StrategyClaim`) as automatically
+  validated — see §17's core rule.
 
 Explicitly **not** part of Milestone 4:
 
@@ -644,6 +839,20 @@ Explicitly **not** part of Milestone 4:
 - Personalizing public feeds.
 - Semantic declared-vs-observed matching (`compareDeclaredToObserved` always
   returns `insufficient_evidence` today — see §16).
+
+Explicitly **not** part of Milestone 5:
+
+- AI extraction of claims from raw text/video/PDF — ingestion is manual and
+  structured only (`ingestResearchSource`/`ingestStrategyClaim`).
+- Web crawling or platform scraping.
+- Automatically testing a claim or generating a `Hypothesis`/`Experiment`
+  from it.
+- Automatically altering a profile's strategy based on any claim.
+- Any modification to CreatorOS's skill-delivery system — Kairos consumes
+  skills as a research input, never replaces how they are shipped.
+
+Explicitly **not** part of either milestone:
+
 - The Science Engine, Adaptive Strategy, the Battle Engine.
 - Onboarding changes, dashboard changes, CreatorOS execution changes.
 

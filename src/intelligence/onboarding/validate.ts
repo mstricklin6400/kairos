@@ -32,9 +32,10 @@ const MAX_POSTS_PER_WEEK = 200;
  * distinct display label for it — every entry in that matrix's label table
  * differs from its own key, so an unrecognized string falls back to being
  * returned unchanged by `platformLabel`. Reuses the existing matrix rather
- * than duplicating its platform list.
+ * than duplicating its platform list. Exported so other intelligence-layer
+ * validators (e.g. `../research/validate.ts`) can reuse the same check.
  */
-function isKnownPlatform(raw: string): boolean {
+export function isKnownPlatform(raw: string): boolean {
   const normalized = normalizePlatform(raw);
   return platformLabel(normalized) !== normalized;
 }

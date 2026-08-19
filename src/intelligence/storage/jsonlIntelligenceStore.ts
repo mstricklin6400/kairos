@@ -23,6 +23,7 @@ import type {
   SegmentFinding,
   SegmentPerformance,
 } from '../audience/types.js';
+import type { ResearchSource, StrategyClaim } from '../research/types.js';
 import type {
   AudienceSignalQuery,
   BaselineQuery,
@@ -32,7 +33,9 @@ import type {
   IntelligenceStore,
   ObservedSegmentQuery,
   ProfileQuery,
+  ResearchSourceQuery,
   SegmentFindingQuery,
+  StrategyClaimQuery,
   StrategyPrincipleQuery,
 } from './store.js';
 
@@ -86,6 +89,14 @@ export function segmentFindingsPath(workspaceRoot: string): string {
 
 export function segmentPerformancePath(workspaceRoot: string): string {
   return join(intelligenceDir(workspaceRoot), 'segment-performance.jsonl');
+}
+
+export function researchSourcesPath(workspaceRoot: string): string {
+  return join(intelligenceDir(workspaceRoot), 'research-sources.jsonl');
+}
+
+export function strategyClaimsPath(workspaceRoot: string): string {
+  return join(intelligenceDir(workspaceRoot), 'strategy-claims.jsonl');
 }
 
 async function appendLine(path: string, entry: unknown): Promise<void> {
@@ -357,5 +368,47 @@ export class JsonlIntelligenceStore implements IntelligenceStore {
     return all
       .filter((p) => p.profileId === profileId && p.segmentId === segmentId)
       .sort((a, b) => (a.calculatedAt < b.calculatedAt ? -1 : 1));
+  }
+
+  async saveResearchSource(source: ResearchSource): Promise<void> {
+    await appendLine(researchSourcesPath(this.workspaceRoot), source);
+  }
+
+  async getResearchSource(id: string): Promise<ResearchSource | null> {
+    const all = await readLatestByKey<ResearchSource>(researchSourcesPath(this.workspaceRoot), (s) => s.id);
+    return all.find((s) => s.id === id) ?? null;
+  }
+
+  async listResearchSources(query: ResearchSourceQuery = {}): Promise<ResearchSource[]> {
+    let sources = await readLatestByKey<ResearchSource>(researchSourcesPath(this.workspaceRoot), (s) => s.id);
+    if (query.sourceType) sources = sources.filter((s) => s.sourceType === query.sourceType);
+    if (query.platform) sources = sources.filter((s) => s.platformsDiscussed?.includes(query.platform!));
+    sources.sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1));
+    return sources.slice(0, query.limit ?? 100);
+  }
+
+  async saveStrategyClaim(claim: StrategyClaim): Promise<void> {
+    await appendLine(strategyClaimsPath(this.workspaceRoot), claim);
+  }
+
+  async getStrategyClaim(id: string): Promise<StrategyClaim | null> {
+    const all = await readLatestByKey<StrategyClaim>(strategyClaimsPath(this.workspaceRoot), (c) => c.id);
+    return all.find((c) => c.id === id) ?? null;
+  }
+
+  async listStrategyClaims(query: StrategyClaimQuery = {}): Promise<StrategyClaim[]> {
+    let claims = await readLatestByKey<StrategyClaim>(strategyClaimsPath(this.workspaceRoot), (c) => c.id);
+    if (query.sourceId) claims = claims.filter((c) => c.sourceId === query.sourceId);
+    if (query.claimType) claims = claims.filter((c) => c.claimType === query.claimType);
+    if (query.status) claims = claims.filter((c) => c.status === query.status);
+    if (query.platform) {
+      const platform = query.platform;
+      claims = claims.filter(
+        (c) => c.platforms?.includes(platform) || (c.scope.level === 'platform' && c.scope.platform === platform),
+      );
+    }
+    if (query.objective) claims = claims.filter((c) => c.objectives?.includes(query.objective!));
+    claims.sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1));
+    return claims.slice(0, query.limit ?? 100);
   }
 }

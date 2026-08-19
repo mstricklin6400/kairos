@@ -37,6 +37,14 @@ export type StrategyPrincipleStatus = 'hypothesis' | 'supported' | 'rejected' | 
  * Imported course material MUST be representable as
  * `{ sourceType: 'playbook', status: 'hypothesis' }` and must not
  * auto-promote to truth.
+ *
+ * From Milestone 5: a principle may be supported by multiple independent
+ * `StrategyClaim`s (`../research/types.ts`) — e.g. a marketer's advice, a
+ * CreatorOS skill, and related platform documentation all pointing at the
+ * same normalized concept. `supportingClaimIds`/`contradictingClaimIds`
+ * reference those claims by id; they never embed the claim objects, and
+ * editing a principle never rewrites the original claim records — see the
+ * raw-source-vs-interpretation rule in `../storage/store.ts`.
  */
 export interface StrategyPrinciple {
   readonly id: string;
@@ -54,6 +62,14 @@ export interface StrategyPrinciple {
   readonly confidence: Confidence;
   /** Absent for untested claims — a playbook statement has no sample. */
   readonly sampleSize?: number;
+  /** `StrategyClaim.id`s (Milestone 5) that support this principle. */
+  readonly supportingClaimIds?: readonly string[];
+  /** `StrategyClaim.id`s (Milestone 5) that contradict this principle — never discarded. */
+  readonly contradictingClaimIds?: readonly string[];
+  /** `Finding.id`s that support this principle, once Kairos has actually tested it. */
+  readonly supportingFindingIds?: readonly string[];
+  /** `Finding.id`s that contradict this principle. */
+  readonly contradictingFindingIds?: readonly string[];
   readonly createdAt: IsoDateTime;
   readonly lastValidatedAt?: IsoDateTime;
 }

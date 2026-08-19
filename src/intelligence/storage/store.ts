@@ -58,6 +58,21 @@
  *   never the source of truth for any of the above, and never allowed to
  *   duplicate or overwrite `SocialProfile.audience`.
  *
+ * SOURCE-OF-TRUTH RULES — Strategy & Research Intelligence (Milestone 5)
+ * ------------------------------------------------------------------------
+ * - The `ResearchSource` store is source metadata — upsert by id. Never
+ *   deleted when outdated; mark `deprecatedAt` / `supersededBySourceId`
+ *   instead, so strategy-decay history stays readable.
+ * - The `StrategyClaim` store is the captured assertion — upsert by id, but
+ *   never rewritten as a *side effect* of a `StrategyPrinciple` changing.
+ *   `StrategyPrinciple.supportingClaimIds`/`contradictingClaimIds`
+ *   (`strategy/types.ts`) reference claims by id; they never embed them, and
+ *   a principle's evolution never touches the underlying claim record. Two
+ *   independent sources making the same assertion are two claim records,
+ *   never merged.
+ * - Outside knowledge (any `StrategyClaim`) never becomes a `Finding`
+ *   automatically — nothing in this store writes to the Findings store.
+ *
  * No layer in this list silently overwrites another.
  */
 import type { GrowthObjective, IsoDateTime, KnowledgeScopeLevel, Platform } from '../common/types.js';
@@ -90,6 +105,13 @@ import type {
   SegmentPerformance,
   SegmentStatus,
 } from '../audience/types.js';
+import type {
+  ClaimStatus,
+  ClaimType,
+  ResearchSource,
+  ResearchSourceType,
+  StrategyClaim,
+} from '../research/types.js';
 
 export interface ProfileQuery {
   readonly platform?: Platform;
@@ -152,6 +174,23 @@ export interface SegmentFindingQuery {
   readonly profileId: string;
   readonly segmentId?: string;
   readonly status?: SegmentFindingStatus;
+  readonly limit?: number;
+}
+
+export interface ResearchSourceQuery {
+  readonly sourceType?: ResearchSourceType;
+  /** Sources whose `platformsDiscussed` includes this platform. */
+  readonly platform?: Platform;
+  readonly limit?: number;
+}
+
+export interface StrategyClaimQuery {
+  readonly sourceId?: string;
+  readonly claimType?: ClaimType;
+  readonly status?: ClaimStatus;
+  /** Claims whose `platforms` includes this platform, or whose `scope` is this platform. */
+  readonly platform?: Platform;
+  readonly objective?: GrowthObjective;
   readonly limit?: number;
 }
 
@@ -223,4 +262,14 @@ export interface IntelligenceStore {
   saveSegmentPerformance(performance: SegmentPerformance): Promise<void>;
   /** Chronological (oldest first). */
   listSegmentPerformance(profileId: string, segmentId: string): Promise<SegmentPerformance[]>;
+
+  /** Upsert by id — source metadata. Deprecate/supersede rather than delete. */
+  saveResearchSource(source: ResearchSource): Promise<void>;
+  getResearchSource(id: string): Promise<ResearchSource | null>;
+  listResearchSources(query?: ResearchSourceQuery): Promise<ResearchSource[]>;
+
+  /** Upsert by id — the captured assertion. Never rewritten as a side effect of a StrategyPrinciple change — see module doc. */
+  saveStrategyClaim(claim: StrategyClaim): Promise<void>;
+  getStrategyClaim(id: string): Promise<StrategyClaim | null>;
+  listStrategyClaims(query?: StrategyClaimQuery): Promise<StrategyClaim[]>;
 }
