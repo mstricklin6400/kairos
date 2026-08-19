@@ -1349,6 +1349,87 @@ built so the Battle Engine can be added as a consumer — `pairId`, `variant`,
 controlled variables for the duration of a controlled test) — without any
 change to the types below it.
 
+### Social Money Lab as an evidence-generation system
+
+The Battle Engine is not only entertainment. **Social Money Lab is an
+intentional evidence-generation system for Kairos**: controlled, publicly
+documented competitions that produce reusable, properly scoped evidence.
+
+The long-term flywheel this serves:
+
+```
+SOCIAL MONEY LAB          runs controlled experiments
+        ↓
+KAIROS SCIENCE ENGINE     evaluates the evidence
+        ↓
+SCOPED FINDINGS           enter the intelligence base
+        ↓
+INTELLIGENCE TRANSFER     decides whether a finding is relevant elsewhere
+        ↓
+SOCIAL PRESCRIPTION       packages relevant intelligence for a business
+        ↓
+CUSTOMER RESULTS          return new first-party evidence to Kairos
+```
+
+This flywheel is a core design objective, not a downstream nice-to-have —
+it is why the scoping discipline in §19 exists at all.
+
+### The evidence-retention contract
+
+**A Battle result must never become universal advice merely because it was
+publicly successful.** Public visibility is not evidence quality. A finding
+that came out of a televised season carries exactly the same scope
+constraints as one from a quiet profile-level test.
+
+Any finding produced through a battle must therefore retain, and carry
+forward into Intelligence Transfer:
+
+| Field | Where it lives today |
+| --- | --- |
+| niche · sub-niche | `Finding.niche` / `Finding.subNiche` |
+| audience context | `Finding.audienceSegmentId` |
+| account stage | `Finding.accountStage` |
+| platform | `Finding.platform` |
+| objective | `Finding.objective` |
+| experiment ids | `Finding.sourceExperimentIds` |
+| sample | `Finding.sampleSize` |
+| time period | ⚠️ partial — `createdAt`/`lastValidatedAt` are record timestamps, not the observation window the evidence covers |
+| limitations | ❌ **gap** — carried on `ComparisonResult`, `OutcomeAssessment`, `ScienceReport` and `HypothesisEvaluation`, but dropped at the `Finding` boundary |
+| season · protocol version · division | ❌ Battle-specific; introduced with the Battle Engine |
+
+Two of these are open gaps in the current model, and the second is
+load-bearing for this flywheel:
+
+- **Observation window.** A finding should state the period its evidence
+  covers, distinctly from when the record was written. `PerformanceBaseline`
+  already models this as `BaselineWindow`; `Finding` does not.
+- **Limitations.** `Finding` is the durable object that survives into
+  Intelligence Transfer. If `small_sample` or `single_pair` falls away when
+  a caveated comparison becomes a finding, a thin battle result reaches a
+  customer's Social Prescription looking unqualified. **This is exactly the
+  "publicly successful → universal advice" leak**, and closing it means
+  carrying `AnalysisLimitation[]` onto `Finding` itself.
+
+Both are small additive changes and should be closed as part of the Battle
+Engine milestone, before any battle evidence enters the intelligence base.
+
+### What already protects this
+
+The scope discipline in §19 is the existing defence and it holds here
+unchanged: findings default to the **narrowest justified scope** (profile),
+a broader scope must be passed explicitly by a caller that actually has
+cross-profile evidence, and a single profile's result can never widen itself
+into a niche, platform or global claim. A battle season is many profiles, so
+cross-profile synthesis becomes *possible* — but it remains something a
+caller must justify with evidence, never something a winning season confers
+automatically.
+
+Presentation is likewise firewalled from evidence: entertainment labels
+("Biggest Upset", "Platform MVP") are derived views over results and are
+never themselves findings.
+
+> **The entertainment can be loud. The methodology must be conservative.**
+
 ---
 
 ## 23. Development Milestones
