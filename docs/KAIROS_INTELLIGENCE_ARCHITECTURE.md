@@ -1333,21 +1333,170 @@ store. Milestone 8 added the recommendation and strategy-plan stores.**
 
 ---
 
-## 22. Battle Engine (Future Module)
+## 22. Battle Engine
 
-The Battle Engine is the future component that turns the domain model into
-continuous competition: pairing variants, allocating posting capacity between
-exploitation and exploration according to `experimentMode`, promoting winners,
-retiring losers and scheduling revalidation of decaying findings.
+Milestone 9. A controlled experimental competition system — the machinery
+behind Social Money Lab.
 
-It is deliberately **out of scope** through Milestone 8. The domain model is
-built so the Battle Engine can be added as a consumer — `pairId`, `variant`,
-`controlVariable`, `testVariables`, `experimentMode`,
-`currentAllocations`, the Science Engine's
-`identifyRevalidationCandidates` output, and now Adaptive Strategy's
-`StrategyConstraint` mechanism (which a battle protocol can use to lock
-controlled variables for the duration of a controlled test) — without any
-change to the types below it.
+**A Battle is not a leaderboard.** It is a structured evidence-generation
+environment in which many profiles compete under registered experimental
+protocols while Kairos measures growth, engagement, reach, traffic, leads,
+revenue, experimental outcomes, prediction accuracy and efficiency.
+
+The Battle Engine **orchestrates**; it does not evaluate. Statistical
+conclusions come from the Science Engine (§19), next actions from Adaptive
+Strategy (§20), measurements from Measurement Ingestion (§18). This module
+adds competition structure, scoring, standings, predictions and provenance —
+and nothing else.
+
+### Nothing is hard-coded to a season design
+
+Twenty accounts across Threads and X is one *configuration* of these types,
+not a shape baked into them. A `BattleCompetitor` carries a
+`competitorType` (`platform`, `strategy`, `format`, `frequency`,
+`creator_type`, `content_type`, `custom`), and `platform` is optional — so
+"AI vs Human", "Short vs Long" and "1/day vs 5/day" use the same types with
+no changes. Divisions, cohorts and matched pairs are all data.
+
+### Registered protocols
+
+`BattleProtocol` is explicit and versioned, and is **registered before
+results are known**. It specifies controlled variables, treatment variables,
+allowed and prohibited strategy changes, measurement window, warm-up period,
+minimum sample expectation, objectives, primary metrics, exploratory
+metrics, scoring policy, outlier/missing-data/attribution policies and the
+operating mode.
+
+Retroactive scoring changes are how a competition stops being evidence, so
+the season stores `protocolVersion` alongside the protocol reference — a
+historical season stays reproducible against the exact rules that governed
+it.
+
+### Pre-registration locks the primary metric
+
+`BattleExperimentRegistration` locks `primaryMetric` at registration.
+`registerExperiment` **refuses** a re-registration that changes it, while
+allowing every other field to be amended. This is the structural defence
+against declaring victory on whichever metric happened to move — the same
+no-p-hacking rule §19 applies within a single experiment, enforced here
+across a competition.
+
+### Lab Mode vs Growth Mode
+
+These are **not equivalent modes**:
+
+- **Lab mode** — registered experimental controls dominate. A protocol's
+  controlled and treatment variables are locked, and any Adaptive Strategy
+  recommendation touching them is **rejected with a reason, even when it is
+  a sound recommendation**. Evidence quality outranks immediate
+  optimization.
+- **Growth mode** — Adaptive Strategy optimizes normally within ordinary
+  profile constraints.
+
+`evaluateRecommendationAgainstProtocol` returns a `ConstraintDecision`
+carrying the verdict, the violated variables and a human-readable reason, so
+a refusal is never opaque. `filterRecommendations` partitions a whole
+recommendation set into accepted and rejected-with-reasons.
+
+### Scoring is configuration, not a universal definition of "winner"
+
+`BattleScoringModel` weights categories drawn from the measurement hierarchy
+(§8) so a battle cannot invent a parallel metric vocabulary. A conversation
+battle weights replies; a revenue battle weights conversion and customer
+value. Both are legitimate.
+
+**The vanity guard** is the protection that matters commercially:
+`vanityGuardMaxShare` caps the combined weight share of attention,
+engagement-signal and amplification categories. Without it a
+revenue-objective battle can be won on impressions. When the guard fires,
+the adjustment is surfaced as a limitation — never applied silently.
+
+Two further protections: a category **no competitor reported** is skipped
+rather than scored zero (missing is not zero), and a no-spread set
+normalizes to 0.5 rather than 1.0, because when everyone scored the same
+nobody won.
+
+### Multiple winners, and no forced overall winner
+
+`BattleCategoryResult` supports `winner` / `tie` / `insufficient_evidence` /
+`inconclusive`, per category. Threads may win conversation while X wins
+qualified traffic; no overall winner is required, and one is derived only
+where the registered scoring model defines it. A lead inside
+`minimumWinMargin` is reported `inconclusive` rather than ranked on noise.
+
+### The leaderboard is never a scientific finding
+
+This is the load-bearing separation. `BattleOutcome` holds the competition
+verdict (`battleVerdict`) and the Science Engine's verdict
+(`scienceVerdict`) as **separate fields**, plus an explicit
+`leaderboardDivergesFromScience` flag.
+
+A competitor can top the category on points while its evidence remains
+scientifically `insufficient_evidence` — and that combination is a
+legitimate, expected, publishable outcome that the model records rather than
+smooths over. **Nothing in the Battle Engine writes to the Findings store.**
+Winning a season produces no `Finding`; only the Science Engine does, on its
+own thresholds.
+
+### Prediction tracking
+
+`BattlePrediction` registers a forecast **before** the outcome is known:
+predicted competitor, metric, direction, confidence, evidence basis and
+rationale.
+
+Every predicted field is **write-once**. `resolvePrediction` fills in only
+`result` / `resolvedAt` / `actualWinnerCompetitorId` / `resolutionNotes`,
+copies all predicted fields forward untouched, and refuses to re-resolve an
+already-resolved prediction. A forecast that can be edited after the fact
+measures nothing. `inconclusive` predictions are excluded from the accuracy
+denominator.
+
+This is what will eventually let Social Money Lab publish **Kairos's own
+forecasting accuracy** — a far stronger claim than any single season result.
+
+### Standings
+
+Derived views, computed on demand by season, division, platform, category or
+objective. Raw measurements and Science Engine evidence beneath them are
+never mutated. Every standing carries `evidenceCount`, `limitations` and an
+operational `confidence` derived from evidence volume — not a statistical
+probability.
+
+### Efficiency and milestones
+
+`perThousand` and `rate` compute revenue-per-1k, leads-per-1k and conversion
+rates, returning `undefined` on a zero or missing denominator rather than
+`Infinity`/`NaN`. Revenue is never inferred from engagement — business
+totals come only from first-party `AttributionEvent` records.
+
+`BattleMilestoneDefinition` / `BattleMilestoneAchievement` are generic:
+"first 100 followers", "first sale", "first $100 revenue" are data, and
+time-to-milestone is computed from the season start.
+
+### Social Money Lab as an evidence-generation system
+
+The Battle Engine is not only entertainment. **Social Money Lab is an
+intentional evidence-generation system for Kairos**: controlled, publicly
+documented competitions that produce reusable, properly scoped evidence.
+
+The long-term flywheel this serves:
+
+```
+SOCIAL MONEY LAB          runs controlled experiments
+        ↓
+KAIROS SCIENCE ENGINE     evaluates the evidence
+        ↓
+SCOPED FINDINGS           enter the intelligence base
+        ↓
+INTELLIGENCE TRANSFER     decides whether a finding is relevant elsewhere
+        ↓
+SOCIAL PRESCRIPTION       packages relevant intelligence for a business
+        ↓
+CUSTOMER RESULTS          return new first-party evidence to Kairos
+```
+
+This flywheel is a core design objective, not a downstream nice-to-have —
+it is why the scoping discipline in §19 exists at all.
 
 ### Social Money Lab as an evidence-generation system
 
@@ -1384,34 +1533,37 @@ constraints as one from a quiet profile-level test.
 Any finding produced through a battle must therefore retain, and carry
 forward into Intelligence Transfer:
 
-| Field | Where it lives today |
+| Field | Where it lives |
 | --- | --- |
-| niche · sub-niche | `Finding.niche` / `Finding.subNiche` |
-| audience context | `Finding.audienceSegmentId` |
-| account stage | `Finding.accountStage` |
-| platform | `Finding.platform` |
-| objective | `Finding.objective` |
-| experiment ids | `Finding.sourceExperimentIds` |
-| sample | `Finding.sampleSize` |
-| time period | ⚠️ partial — `createdAt`/`lastValidatedAt` are record timestamps, not the observation window the evidence covers |
-| limitations | ❌ **gap** — carried on `ComparisonResult`, `OutcomeAssessment`, `ScienceReport` and `HypothesisEvaluation`, but dropped at the `Finding` boundary |
-| season · protocol version · division | ❌ Battle-specific; introduced with the Battle Engine |
+| niche · sub-niche | `Finding.niche` / `Finding.subNiche` · `BattleEvidenceReference.niche` |
+| audience context | `Finding.audienceSegmentId` · `BattleEvidenceReference.audienceContext` |
+| account stage | `Finding.accountStage` · `BattleEvidenceReference.accountStage` |
+| platform | `Finding.platform` · `BattleEvidenceReference.platform` |
+| objective | `Finding.objective` · `BattleEvidenceReference.objective` |
+| experiment ids | `Finding.sourceExperimentIds` · `BattleEvidenceReference.experimentIds` |
+| sample | `Finding.sampleSize` · `BattleEvidenceReference.sampleSize` |
+| time period | `Finding.observationWindow` · `BattleEvidenceReference.periodStart`/`periodEnd` |
+| limitations | `Finding.limitations` · `BattleEvidenceReference.limitations` |
+| season · protocol version · division/cohort | `BattleEvidenceReference.seasonId` / `protocolVersion` / `divisionId` / `cohortId` |
 
-Two of these are open gaps in the current model, and the second is
-load-bearing for this flywheel:
+Two of these were open gaps and were **closed as part of Milestone 9**,
+before any battle evidence could enter the intelligence base:
 
-- **Observation window.** A finding should state the period its evidence
-  covers, distinctly from when the record was written. `PerformanceBaseline`
-  already models this as `BaselineWindow`; `Finding` does not.
-- **Limitations.** `Finding` is the durable object that survives into
-  Intelligence Transfer. If `small_sample` or `single_pair` falls away when
-  a caveated comparison becomes a finding, a thin battle result reaches a
-  customer's Social Prescription looking unqualified. **This is exactly the
-  "publicly successful → universal advice" leak**, and closing it means
-  carrying `AnalysisLimitation[]` onto `Finding` itself.
+- **Observation window.** `Finding.observationWindow` now states the period
+  the evidence covers, distinctly from `createdAt`/`lastValidatedAt`, which
+  are record timestamps.
+- **Limitations.** `Finding.limitations` now travels with the conclusion,
+  and `emitFinding` propagates the evaluation's own limitations onto it
+  automatically. Previously a caveat carried on `ComparisonResult` /
+  `OutcomeAssessment` / `ScienceReport` / `HypothesisEvaluation` was dropped
+  at the `Finding` boundary — and because `Finding` is the durable object
+  that survives into Intelligence Transfer, that was **precisely the
+  "publicly successful → universal advice" leak**: a thin battle result
+  would have reached a customer's Social Prescription looking unqualified.
 
-Both are small additive changes and should be closed as part of the Battle
-Engine milestone, before any battle evidence enters the intelligence base.
+`BattleEngine.buildEvidenceReference` assembles the full envelope, inheriting
+matchup limitations for division-scoped evidence and flagging small samples
+automatically.
 
 ### What already protects this
 
@@ -1443,10 +1595,11 @@ never themselves findings.
 | 5 — Strategy & Research Intelligence | Research sources, strategy claims, observed associations, causal status, provenance, `StrategyPrinciple` evidence links | Done |
 | 6 — Measurement Ingestion & Attribution | Raw CreatorOS snapshots, normalized post/profile observations, first-party attribution events, tracking context, raw/normalized lineage | Done |
 | 7 — Science Engine | Baselines, comparisons, objective-metric policy, paired analysis, hypothesis evidence & evaluation, operational confidence, finding emission, decay/revalidation, science reports | Done |
-| **8 — Adaptive Strategy Engine** | Next-best-action recommendations, exploration/exploitation policy, constraints, content allocation, failure memory, information gain, strategy plans & versioning | **This milestone** |
-| 9 — Battle Engine | Seasons, competitors, divisions, matchups, protocol pre-registration, scoring, standings | Planned |
-| 10 — Intelligence Waterfall | Cross-profile/niche/platform evidence precedence and synthesis | Planned |
-| 11 — Social Genome | Commercial dashboard/product surface | Planned |
+| 8 — Adaptive Strategy Engine | Next-best-action recommendations, exploration/exploitation policy, constraints, content allocation, failure memory, information gain, strategy plans & versioning | Done |
+| **9 — Battle Engine** | Seasons, protocols, competitors, divisions, matchups, pre-registration, lab/growth modes, configurable scoring with vanity guard, standings, predictions, milestones, evidence provenance | **This milestone** |
+| 10 — Intelligence Transfer | Whether evidence from elsewhere is relevant to a given profile; comparability, negative transfer, cold start | Planned |
+| 11 — Social Prescription | Evidence-backed, profile-specific strategy packages | Planned |
+| 12 — Social Genome | Conditional evidence map across profile × platform × niche × audience × objective × content | Planned |
 
 Each milestone is additive and must leave CreatorOS execution untouched.
 
@@ -1548,9 +1701,20 @@ Explicitly **not** part of Milestone 8:
 - Presenting `priorityScore` or `InformationGainScore` as statistical
   quantities. Both are operational, explainable scores.
 
+Explicitly **not** part of Milestone 9:
+
+- Any LLM call, or any content generation.
+- Publishing or scheduling — CreatorOS remains the execution layer.
+- Recomputing statistics the Science Engine owns; the Battle Engine
+  orchestrates and delegates.
+- Emitting a `Finding` from a leaderboard position, under any circumstances.
+- Duplicating measurements already stored by Measurement Ingestion.
+- Any customer-facing dashboard or presentation surface. Entertainment
+  labels are derived views, and none are computed here.
+
 Explicitly **not** part of any milestone so far:
 
-- The Battle Engine, the Intelligence Waterfall, Social Genome.
+- Intelligence Transfer, Social Prescription, Social Genome.
 - Onboarding changes, dashboard changes, CreatorOS execution changes.
 
 ---

@@ -33,8 +33,26 @@ import type {
 import type { HypothesisEvidence } from '../science/analysisTypes.js';
 import type { AdaptiveStrategyPlan, StrategyRecommendation } from '../adaptive/types.js';
 import type {
+  BattleCategoryResult,
+  BattleCompetitor,
+  BattleDivision,
+  BattleExperimentRegistration,
+  BattleMatchup,
+  BattleMilestoneAchievement,
+  BattleMilestoneDefinition,
+  BattleOutcome,
+  BattlePrediction,
+  BattleProtocol,
+  BattleRound,
+  BattleScoringModel,
+  BattleSeason,
+} from '../battle/types.js';
+import type {
   AdaptiveStrategyPlanQuery,
   AttributionEventQuery,
+  BattlePredictionQuery,
+  BattleSeasonQuery,
+  BattleSeasonScopedQuery,
   HypothesisEvidenceQuery,
   StrategyRecommendationQuery,
   AudienceSignalQuery,
@@ -140,6 +158,15 @@ export function strategyRecommendationsPath(workspaceRoot: string): string {
 
 export function adaptiveStrategyPlansPath(workspaceRoot: string): string {
   return join(intelligenceDir(workspaceRoot), 'adaptive-strategy-plans.jsonl');
+}
+
+/** All Battle Engine records live under `kairos/intelligence/battle/`. */
+function battleDir(workspaceRoot: string): string {
+  return join(intelligenceDir(workspaceRoot), 'battle');
+}
+
+export function battlePath(workspaceRoot: string, name: string): string {
+  return join(battleDir(workspaceRoot), `${name}.jsonl`);
 }
 
 async function appendLine(path: string, entry: unknown): Promise<void> {
@@ -586,5 +613,172 @@ export class JsonlIntelligenceStore implements IntelligenceStore {
     // Newest version first; every earlier version is retained.
     plans.sort((a, b) => b.version - a.version);
     return plans.slice(0, query.limit ?? 100);
+  }
+
+  // ---- Battle Engine ----------------------------------------------------
+
+  /** Shared read for the season-scoped battle collections. */
+  private async battleRecords<T extends { id: string }>(name: string): Promise<T[]> {
+    return readLatestByKey<T>(battlePath(this.workspaceRoot, name), (r) => r.id);
+  }
+
+  async saveBattleSeason(season: BattleSeason): Promise<void> {
+    await appendLine(battlePath(this.workspaceRoot, 'seasons'), season);
+  }
+
+  async getBattleSeason(id: string): Promise<BattleSeason | null> {
+    return (await this.battleRecords<BattleSeason>('seasons')).find((s) => s.id === id) ?? null;
+  }
+
+  async listBattleSeasons(query: BattleSeasonQuery = {}): Promise<BattleSeason[]> {
+    let seasons = await this.battleRecords<BattleSeason>('seasons');
+    if (query.status) seasons = seasons.filter((s) => s.status === query.status);
+    if (query.niche) seasons = seasons.filter((s) => s.niche === query.niche);
+    if (query.isPublic !== undefined) seasons = seasons.filter((s) => s.isPublic === query.isPublic);
+    seasons.sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
+    return seasons.slice(0, query.limit ?? 100);
+  }
+
+  async saveBattleProtocol(protocol: BattleProtocol): Promise<void> {
+    await appendLine(battlePath(this.workspaceRoot, 'protocols'), protocol);
+  }
+
+  async getBattleProtocol(id: string): Promise<BattleProtocol | null> {
+    return (await this.battleRecords<BattleProtocol>('protocols')).find((p) => p.id === id) ?? null;
+  }
+
+  async listBattleProtocols(): Promise<BattleProtocol[]> {
+    return this.battleRecords<BattleProtocol>('protocols');
+  }
+
+  async saveBattleCompetitor(competitor: BattleCompetitor): Promise<void> {
+    await appendLine(battlePath(this.workspaceRoot, 'competitors'), competitor);
+  }
+
+  async getBattleCompetitor(id: string): Promise<BattleCompetitor | null> {
+    return (await this.battleRecords<BattleCompetitor>('competitors')).find((c) => c.id === id) ?? null;
+  }
+
+  async listBattleCompetitors(query: BattleSeasonScopedQuery): Promise<BattleCompetitor[]> {
+    const all = await this.battleRecords<BattleCompetitor>('competitors');
+    return all.filter((c) => c.seasonId === query.seasonId).slice(0, query.limit ?? 200);
+  }
+
+  async saveBattleDivision(division: BattleDivision): Promise<void> {
+    await appendLine(battlePath(this.workspaceRoot, 'divisions'), division);
+  }
+
+  async getBattleDivision(id: string): Promise<BattleDivision | null> {
+    return (await this.battleRecords<BattleDivision>('divisions')).find((d) => d.id === id) ?? null;
+  }
+
+  async listBattleDivisions(query: BattleSeasonScopedQuery): Promise<BattleDivision[]> {
+    const all = await this.battleRecords<BattleDivision>('divisions');
+    return all.filter((d) => d.seasonId === query.seasonId).slice(0, query.limit ?? 200);
+  }
+
+  async saveBattleMatchup(matchup: BattleMatchup): Promise<void> {
+    await appendLine(battlePath(this.workspaceRoot, 'matchups'), matchup);
+  }
+
+  async getBattleMatchup(id: string): Promise<BattleMatchup | null> {
+    return (await this.battleRecords<BattleMatchup>('matchups')).find((m) => m.id === id) ?? null;
+  }
+
+  async listBattleMatchups(query: BattleSeasonScopedQuery): Promise<BattleMatchup[]> {
+    const all = await this.battleRecords<BattleMatchup>('matchups');
+    return all.filter((m) => m.seasonId === query.seasonId).slice(0, query.limit ?? 500);
+  }
+
+  async saveBattleRound(round: BattleRound): Promise<void> {
+    await appendLine(battlePath(this.workspaceRoot, 'rounds'), round);
+  }
+
+  async listBattleRounds(query: BattleSeasonScopedQuery): Promise<BattleRound[]> {
+    const all = await this.battleRecords<BattleRound>('rounds');
+    return all
+      .filter((r) => r.seasonId === query.seasonId)
+      .sort((a, b) => a.number - b.number)
+      .slice(0, query.limit ?? 200);
+  }
+
+  async saveBattleScoringModel(model: BattleScoringModel): Promise<void> {
+    await appendLine(battlePath(this.workspaceRoot, 'scoring-models'), model);
+  }
+
+  async getBattleScoringModel(id: string): Promise<BattleScoringModel | null> {
+    return (await this.battleRecords<BattleScoringModel>('scoring-models')).find((m) => m.id === id) ?? null;
+  }
+
+  async saveBattleExperimentRegistration(registration: BattleExperimentRegistration): Promise<void> {
+    await appendLine(battlePath(this.workspaceRoot, 'experiment-registrations'), registration);
+  }
+
+  async getBattleExperimentRegistration(id: string): Promise<BattleExperimentRegistration | null> {
+    return (await this.battleRecords<BattleExperimentRegistration>('experiment-registrations')).find((r) => r.id === id) ?? null;
+  }
+
+  async listBattleExperimentRegistrations(query: BattleSeasonScopedQuery): Promise<BattleExperimentRegistration[]> {
+    const all = await this.battleRecords<BattleExperimentRegistration>('experiment-registrations');
+    return all.filter((r) => r.seasonId === query.seasonId).slice(0, query.limit ?? 500);
+  }
+
+  async saveBattlePrediction(prediction: BattlePrediction): Promise<void> {
+    await appendLine(battlePath(this.workspaceRoot, 'predictions'), prediction);
+  }
+
+  async getBattlePrediction(id: string): Promise<BattlePrediction | null> {
+    return (await this.battleRecords<BattlePrediction>('predictions')).find((p) => p.id === id) ?? null;
+  }
+
+  async listBattlePredictions(query: BattlePredictionQuery): Promise<BattlePrediction[]> {
+    let all = await this.battleRecords<BattlePrediction>('predictions');
+    all = all.filter((p) => p.seasonId === query.seasonId);
+    if (query.result) all = all.filter((p) => p.result === query.result);
+    all.sort((a, b) => (a.predictedAt < b.predictedAt ? -1 : 1));
+    return all.slice(0, query.limit ?? 500);
+  }
+
+  async saveBattleMilestoneDefinition(definition: BattleMilestoneDefinition): Promise<void> {
+    await appendLine(battlePath(this.workspaceRoot, 'milestone-definitions'), definition);
+  }
+
+  async listBattleMilestoneDefinitions(query: BattleSeasonScopedQuery): Promise<BattleMilestoneDefinition[]> {
+    const all = await this.battleRecords<BattleMilestoneDefinition>('milestone-definitions');
+    return all.filter((d) => d.seasonId === query.seasonId).slice(0, query.limit ?? 200);
+  }
+
+  async saveBattleMilestoneAchievement(achievement: BattleMilestoneAchievement): Promise<void> {
+    await appendLine(battlePath(this.workspaceRoot, 'milestone-achievements'), achievement);
+  }
+
+  async listBattleMilestoneAchievements(query: BattleSeasonScopedQuery): Promise<BattleMilestoneAchievement[]> {
+    const all = await this.battleRecords<BattleMilestoneAchievement>('milestone-achievements');
+    return all
+      .filter((a) => a.seasonId === query.seasonId)
+      .sort((a, b) => (a.achievedAt < b.achievedAt ? -1 : 1))
+      .slice(0, query.limit ?? 500);
+  }
+
+  async saveBattleCategoryResult(result: BattleCategoryResult): Promise<void> {
+    await appendLine(battlePath(this.workspaceRoot, 'category-results'), result);
+  }
+
+  async listBattleCategoryResults(query: BattleSeasonScopedQuery): Promise<BattleCategoryResult[]> {
+    const all = await this.battleRecords<BattleCategoryResult>('category-results');
+    return all.filter((r) => r.seasonId === query.seasonId).slice(0, query.limit ?? 500);
+  }
+
+  async saveBattleOutcome(outcome: BattleOutcome): Promise<void> {
+    await appendLine(battlePath(this.workspaceRoot, 'outcomes'), outcome);
+  }
+
+  async getBattleOutcome(id: string): Promise<BattleOutcome | null> {
+    return (await this.battleRecords<BattleOutcome>('outcomes')).find((o) => o.id === id) ?? null;
+  }
+
+  async listBattleOutcomes(query: BattleSeasonScopedQuery): Promise<BattleOutcome[]> {
+    const all = await this.battleRecords<BattleOutcome>('outcomes');
+    return all.filter((o) => o.seasonId === query.seasonId).slice(0, query.limit ?? 500);
   }
 }

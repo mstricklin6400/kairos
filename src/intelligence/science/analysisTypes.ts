@@ -33,7 +33,7 @@ import type {
   Platform,
 } from '../common/types.js';
 import type { BaselineComparisonScope, PerformanceBaseline, PerformanceMetric } from '../performance/types.js';
-import type { EffectSize } from './types.js';
+import type { AnalysisLimitation, EffectSize } from './types.js';
 
 /**
  * Where an `AnalyticalObservation` was read from. Milestone 6 deliberately
@@ -137,20 +137,11 @@ export const DEFAULT_OBJECTIVE_METRICS: ObjectiveMetricPolicy = {
 export type ComparisonDirection = 'above' | 'below' | 'near_baseline';
 
 /**
- * A named caveat attached to any analysis. Limitations are never hidden:
- * an analysis that cannot be trusted must say so in its own output.
+ * Re-exported from `./types.js`, where it is defined so that `Finding`
+ * itself can carry limitations without this module and that one importing
+ * each other. Every existing consumer keeps importing it from here.
  */
-export type AnalysisLimitation =
-  | 'small_sample'
-  | 'missing_metric'
-  | 'no_baseline'
-  | 'unmatched_comparison'
-  | 'mixed_account_stages'
-  | 'large_variance'
-  | 'unknown_attribution'
-  | 'insufficient_controls'
-  | 'single_pair'
-  | 'platform_change';
+export type { AnalysisLimitation } from './types.js';
 
 /**
  * How one observation compared with its baseline. Being `above` baseline is

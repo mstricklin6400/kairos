@@ -461,6 +461,10 @@ export class ScienceEngine {
     readonly context: FindingEmissionContext;
     readonly sourceExperimentIds: readonly string[];
     readonly effectSize?: Finding['effectSize'];
+    /** The period the evidence covers, distinct from when this record was written. */
+    readonly observationWindow?: Finding['observationWindow'];
+    /** Extra caveats to carry onto the finding, merged with the evaluation's own. */
+    readonly limitations?: readonly AnalysisLimitation[];
     readonly existingFindingId?: string;
   }): Promise<Finding | null> {
     const { evaluation, context } = input;
@@ -495,6 +499,11 @@ export class ScienceEngine {
       effectSize: input.effectSize,
       status,
       sourceExperimentIds: input.sourceExperimentIds,
+      observationWindow: input.observationWindow,
+      // Caveats travel with the conclusion. The evaluation's own limitations
+      // are carried forward so a thin result cannot arrive downstream
+      // looking unqualified.
+      limitations: [...new Set([...evaluation.limitations, ...(input.limitations ?? [])])],
       createdAt: now,
       lastValidatedAt: now,
     };

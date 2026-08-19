@@ -159,6 +159,32 @@ export type {
 export { DEFAULT_STRATEGY_POLICY } from './adaptive/types.js';
 
 export type {
+  BattleCategoryResult,
+  BattleCompetitor,
+  BattleCompetitorType,
+  BattleDivision,
+  BattleEvidenceReference,
+  BattleExperimentRegistration,
+  BattleMatchup,
+  BattleMilestoneAchievement,
+  BattleMilestoneDefinition,
+  BattleOperatingMode,
+  BattleOutcome,
+  BattlePrediction,
+  BattleProtocol,
+  BattleRound,
+  BattleScore,
+  BattleScoringCategory,
+  BattleScoringModel,
+  BattleSeason,
+  BattleSeasonStatus,
+  BattleStanding,
+  BattleVerdict,
+  PredictionResult,
+  ScoringCategory,
+} from './battle/types.js';
+
+export type {
   AudienceIntelligence,
   NicheIntelligence,
   ProfileBrain,

@@ -73,6 +73,31 @@
  * - Outside knowledge (any `StrategyClaim`) never becomes a `Finding`
  *   automatically — nothing in this store writes to the Findings store.
  *
+ * SOURCE-OF-TRUTH RULES — the Battle Engine (Milestone 9)
+ * ------------------------------------------------------------------------
+ * - Battle configuration (`BattleSeason`, `BattleProtocol`,
+ *   `BattleCompetitor`, `BattleDivision`, `BattleMatchup`, `BattleRound`,
+ *   `BattleScoringModel`, `BattleMilestoneDefinition`) is durable
+ *   source-of-truth, upserted by id.
+ * - `BattleExperimentRegistration` is a PRE-REGISTRATION: its
+ *   `primaryMetric` is locked at registration and the engine refuses to
+ *   change it, which is what makes the competition evidence rather than
+ *   post-hoc metric shopping.
+ * - `BattlePrediction` is write-once on every predicted field. Only
+ *   `result`/`resolvedAt`/`actualWinnerCompetitorId`/`resolutionNotes` are
+ *   ever filled in, and only once — a forecast that can be edited after the
+ *   fact measures nothing.
+ * - `BattleScore` and `BattleStanding` are DERIVED views. Standings are
+ *   recomputed from measurements on demand and are never treated as
+ *   evidence; the raw measurements and Science Engine conclusions beneath
+ *   them are untouched by any battle operation.
+ * - **A leaderboard position is never a `Finding`.** Nothing in the Battle
+ *   Engine writes to the Findings store. `BattleOutcome` records the
+ *   competition verdict and the Science Engine verdict as separate fields
+ *   precisely so the two are free to disagree.
+ * - The Battle Engine never duplicates measurements: it aggregates what
+ *   Measurement Ingestion already stored.
+ *
  * SOURCE-OF-TRUTH RULES — Adaptive Strategy (Milestone 8)
  * ------------------------------------------------------------------------
  * - `StrategyRecommendation` and `AdaptiveStrategyPlan` are auditable
@@ -175,6 +200,22 @@ import type {
   RecommendationType,
   StrategyRecommendation,
 } from '../adaptive/types.js';
+import type {
+  BattleCategoryResult,
+  BattleCompetitor,
+  BattleDivision,
+  BattleExperimentRegistration,
+  BattleMatchup,
+  BattleMilestoneAchievement,
+  BattleMilestoneDefinition,
+  BattleOutcome,
+  BattlePrediction,
+  BattleProtocol,
+  BattleRound,
+  BattleScoringModel,
+  BattleSeason,
+  BattleSeasonStatus,
+} from '../battle/types.js';
 
 export interface ProfileQuery {
   readonly platform?: Platform;
@@ -319,6 +360,24 @@ export interface AdaptiveStrategyPlanQuery {
   readonly limit?: number;
 }
 
+export interface BattleSeasonQuery {
+  readonly status?: BattleSeasonStatus;
+  readonly niche?: string;
+  readonly isPublic?: boolean;
+  readonly limit?: number;
+}
+
+export interface BattleSeasonScopedQuery {
+  readonly seasonId: string;
+  readonly limit?: number;
+}
+
+export interface BattlePredictionQuery {
+  readonly seasonId: string;
+  readonly result?: BattlePrediction['result'];
+  readonly limit?: number;
+}
+
 export interface IntelligenceStore {
   /** Upsert by id. */
   saveProfile(profile: SocialProfile): Promise<void>;
@@ -430,4 +489,57 @@ export interface IntelligenceStore {
   saveAdaptiveStrategyPlan(plan: AdaptiveStrategyPlan): Promise<void>;
   getAdaptiveStrategyPlan(id: string): Promise<AdaptiveStrategyPlan | null>;
   listAdaptiveStrategyPlans(query: AdaptiveStrategyPlanQuery): Promise<AdaptiveStrategyPlan[]>;
+
+  // ---- Battle Engine (Milestone 9). Durable configuration, upsert by id. ----
+
+  saveBattleSeason(season: BattleSeason): Promise<void>;
+  getBattleSeason(id: string): Promise<BattleSeason | null>;
+  listBattleSeasons(query?: BattleSeasonQuery): Promise<BattleSeason[]>;
+
+  /** Registered before results exist; never silently rewritten afterwards. */
+  saveBattleProtocol(protocol: BattleProtocol): Promise<void>;
+  getBattleProtocol(id: string): Promise<BattleProtocol | null>;
+  listBattleProtocols(): Promise<BattleProtocol[]>;
+
+  saveBattleCompetitor(competitor: BattleCompetitor): Promise<void>;
+  getBattleCompetitor(id: string): Promise<BattleCompetitor | null>;
+  listBattleCompetitors(query: BattleSeasonScopedQuery): Promise<BattleCompetitor[]>;
+
+  saveBattleDivision(division: BattleDivision): Promise<void>;
+  getBattleDivision(id: string): Promise<BattleDivision | null>;
+  listBattleDivisions(query: BattleSeasonScopedQuery): Promise<BattleDivision[]>;
+
+  saveBattleMatchup(matchup: BattleMatchup): Promise<void>;
+  getBattleMatchup(id: string): Promise<BattleMatchup | null>;
+  listBattleMatchups(query: BattleSeasonScopedQuery): Promise<BattleMatchup[]>;
+
+  saveBattleRound(round: BattleRound): Promise<void>;
+  listBattleRounds(query: BattleSeasonScopedQuery): Promise<BattleRound[]>;
+
+  saveBattleScoringModel(model: BattleScoringModel): Promise<void>;
+  getBattleScoringModel(id: string): Promise<BattleScoringModel | null>;
+
+  /** Primary metric is locked at registration — see module doc. */
+  saveBattleExperimentRegistration(registration: BattleExperimentRegistration): Promise<void>;
+  getBattleExperimentRegistration(id: string): Promise<BattleExperimentRegistration | null>;
+  listBattleExperimentRegistrations(query: BattleSeasonScopedQuery): Promise<BattleExperimentRegistration[]>;
+
+  /** Write-once on every predicted field; only the resolution is ever filled in. */
+  saveBattlePrediction(prediction: BattlePrediction): Promise<void>;
+  getBattlePrediction(id: string): Promise<BattlePrediction | null>;
+  listBattlePredictions(query: BattlePredictionQuery): Promise<BattlePrediction[]>;
+
+  saveBattleMilestoneDefinition(definition: BattleMilestoneDefinition): Promise<void>;
+  listBattleMilestoneDefinitions(query: BattleSeasonScopedQuery): Promise<BattleMilestoneDefinition[]>;
+
+  saveBattleMilestoneAchievement(achievement: BattleMilestoneAchievement): Promise<void>;
+  listBattleMilestoneAchievements(query: BattleSeasonScopedQuery): Promise<BattleMilestoneAchievement[]>;
+
+  /** Persisted for trend history; still a derived view, never evidence. */
+  saveBattleCategoryResult(result: BattleCategoryResult): Promise<void>;
+  listBattleCategoryResults(query: BattleSeasonScopedQuery): Promise<BattleCategoryResult[]>;
+
+  saveBattleOutcome(outcome: BattleOutcome): Promise<void>;
+  getBattleOutcome(id: string): Promise<BattleOutcome | null>;
+  listBattleOutcomes(query: BattleSeasonScopedQuery): Promise<BattleOutcome[]>;
 }

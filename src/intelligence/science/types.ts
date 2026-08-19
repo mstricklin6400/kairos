@@ -22,7 +22,29 @@ import type {
   LengthClass,
   Platform,
 } from '../common/types.js';
-import type { PerformanceMetric } from '../performance/types.js';
+import type { BaselineWindow, PerformanceMetric } from '../performance/types.js';
+
+/**
+ * A named caveat attached to any analysis or conclusion. Limitations are
+ * never hidden: an analysis that cannot be trusted must say so in its own
+ * output, and a `Finding` must carry its caveats with it — see the note on
+ * `Finding.limitations`.
+ *
+ * Defined here rather than in `./analysisTypes.ts` (which re-exports it) so
+ * that `Finding` can carry limitations without the two modules importing
+ * each other.
+ */
+export type AnalysisLimitation =
+  | 'small_sample'
+  | 'missing_metric'
+  | 'no_baseline'
+  | 'unmatched_comparison'
+  | 'mixed_account_stages'
+  | 'large_variance'
+  | 'unknown_attribution'
+  | 'insufficient_controls'
+  | 'single_pair'
+  | 'platform_change';
 
 /**
  * The structured description of what a post actually *was*. This is what makes
@@ -215,6 +237,20 @@ export interface Finding {
   readonly effectSize?: EffectSize;
   readonly status: FindingStatus;
   readonly sourceExperimentIds: readonly string[];
+  /**
+   * The period the underlying evidence actually covers — distinct from
+   * `createdAt`/`lastValidatedAt`, which are record timestamps. Without
+   * this, "when was this true?" is unanswerable, which matters as soon as a
+   * finding travels beyond the profile that produced it.
+   */
+  readonly observationWindow?: BaselineWindow;
+  /**
+   * Caveats that travel WITH the conclusion. `Finding` is the durable object
+   * that survives into downstream consumers, so a caveat dropped here is a
+   * caveat lost: a thin result would otherwise arrive downstream looking
+   * unqualified. Never omit a limitation that applied to the evidence.
+   */
+  readonly limitations?: readonly AnalysisLimitation[];
   readonly createdAt: IsoDateTime;
   /** Age is half of trust — a finding nobody has re-tested is decaying. */
   readonly lastValidatedAt: IsoDateTime;
