@@ -28,6 +28,7 @@ import type { IsoDateTime } from '../common/types.js';
 import type { IntelligenceStore } from '../storage/store.js';
 import type { AudienceSegment, Offer, SocialProfile } from '../profiles/types.js';
 import type { ProfileBrain } from '../strategy/types.js';
+import { compareDeclaredToObserved } from '../audience/aggregate.js';
 import { normalizeUrl, validateOnboardingInput } from './validate.js';
 import type {
   OnboardingAudienceSegmentInput,
@@ -132,6 +133,12 @@ function initialProfileBrain(profile: SocialProfile, now: IsoDateTime): ProfileB
       objections: [],
       motivations: [],
       responsePatterns: [],
+      observedSegmentIds: [],
+      emergingSegmentIds: [],
+      segmentFindingIds: [],
+      totalSignalCount: 0,
+      unclassifiedSignalCount: 0,
+      declaredVsObserved: compareDeclaredToObserved({ observedSegmentCount: 0, totalSignalCount: 0 }, now),
     },
     strategyMemory: { validated: [], promising: [], rejected: [], decaying: [] },
     performanceBaselines: [],

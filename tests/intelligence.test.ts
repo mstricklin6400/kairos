@@ -359,6 +359,12 @@ describe('ProfileBrain', () => {
         objections: [],
         motivations: [],
         responsePatterns: [],
+        observedSegmentIds: [],
+        emergingSegmentIds: [],
+        segmentFindingIds: [],
+        totalSignalCount: 0,
+        unclassifiedSignalCount: 0,
+        declaredVsObserved: { state: 'insufficient_evidence', evaluatedAt: NOW, observedSegmentCount: 0, totalSignalCount: 0 },
       },
       strategyMemory: {
         validated: [f('fnd_v', 'validated')],

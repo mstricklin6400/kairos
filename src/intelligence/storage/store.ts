@@ -33,8 +33,34 @@
  * milestone, not a storage concern: this store persists and returns exactly
  * what it is given for both, and never mutates one because the other
  * changed.
+ *
+ * SOURCE-OF-TRUTH RULES — the Audience Brain (Milestone 4)
+ * ------------------------------------------------------------------------
+ * - `SocialProfile.audience` is the owner-declared audience hypothesis —
+ *   set at onboarding, never written by anything in this section.
+ * - The `AudienceSignal` store is raw observed behavioral evidence:
+ *   append-only by `id`, exactly like `ExperimentObservation`. A signal's
+ *   `segmentId` may be updated later (a reclassification), but its
+ *   `classificationHistory` preserves the prior read — a later
+ *   classification never erases an earlier one.
+ * - The `ObservedAudienceSegment` store is the current segment model
+ *   derived from that evidence — upsert by id, allowed to evolve as more
+ *   signals arrive.
+ * - The `SegmentFinding` store is learned, audience-scoped conclusions —
+ *   upsert by id, evidence-linked via `supportingSignalIds` /
+ *   `contradictingSignalIds` / `supportingExperimentIds`. Never
+ *   automatically equivalent to a globally validated `Finding`.
+ * - `SegmentPerformance` snapshots are append-only by `id`, same discipline
+ *   as `ExperimentObservation` — a recalculation never destroys an earlier
+ *   read of a segment's numbers.
+ * - `ProfileBrain.audienceIntelligence` is a materialized summary
+ *   (segment/finding id references and counts) for fast strategy reads —
+ *   never the source of truth for any of the above, and never allowed to
+ *   duplicate or overwrite `SocialProfile.audience`.
+ *
+ * No layer in this list silently overwrites another.
  */
-import type { GrowthObjective, KnowledgeScopeLevel, Platform } from '../common/types.js';
+import type { GrowthObjective, IsoDateTime, KnowledgeScopeLevel, Platform } from '../common/types.js';
 import type {
   BaselineComparisonScope,
   PerformanceBaseline,
@@ -55,6 +81,15 @@ import type {
   StrategyPrincipleStatus,
   StrategySourceType,
 } from '../strategy/types.js';
+import type {
+  AudienceSignal,
+  AudienceSignalType,
+  ObservedAudienceSegment,
+  SegmentFinding,
+  SegmentFindingStatus,
+  SegmentPerformance,
+  SegmentStatus,
+} from '../audience/types.js';
 
 export interface ProfileQuery {
   readonly platform?: Platform;
@@ -92,6 +127,31 @@ export interface FindingQuery {
 export interface BaselineQuery {
   readonly profileId: string;
   readonly metric?: PerformanceMetric;
+  readonly limit?: number;
+}
+
+export interface AudienceSignalQuery {
+  readonly profileId: string;
+  readonly segmentId?: string;
+  /** Restrict to signals with no `segmentId` at all. Ignored if `segmentId` is also given. */
+  readonly unclassifiedOnly?: boolean;
+  readonly signalType?: AudienceSignalType;
+  /** Inclusive `observedAt` range. */
+  readonly from?: IsoDateTime;
+  readonly to?: IsoDateTime;
+  readonly limit?: number;
+}
+
+export interface ObservedSegmentQuery {
+  readonly profileId: string;
+  readonly status?: SegmentStatus;
+  readonly limit?: number;
+}
+
+export interface SegmentFindingQuery {
+  readonly profileId: string;
+  readonly segmentId?: string;
+  readonly status?: SegmentFindingStatus;
   readonly limit?: number;
 }
 
@@ -143,4 +203,24 @@ export interface IntelligenceStore {
     comparisonScope: BaselineComparisonScope,
   ): Promise<PerformanceBaseline | null>;
   listBaselines(query: BaselineQuery): Promise<PerformanceBaseline[]>;
+
+  /** Raw evidence. Append-only by id; a later reclassification updates `segmentId` on the same id without losing `classificationHistory`. */
+  saveAudienceSignal(signal: AudienceSignal): Promise<void>;
+  getAudienceSignal(id: string): Promise<AudienceSignal | null>;
+  listAudienceSignals(query: AudienceSignalQuery): Promise<AudienceSignal[]>;
+
+  /** Upsert by id — the current segment model derived from evidence. */
+  saveObservedSegment(segment: ObservedAudienceSegment): Promise<void>;
+  getObservedSegment(id: string): Promise<ObservedAudienceSegment | null>;
+  listObservedSegments(query: ObservedSegmentQuery): Promise<ObservedAudienceSegment[]>;
+
+  /** Upsert by id. Never automatically equivalent to a globally validated Finding — see module doc. */
+  saveSegmentFinding(finding: SegmentFinding): Promise<void>;
+  getSegmentFinding(id: string): Promise<SegmentFinding | null>;
+  listSegmentFindings(query: SegmentFindingQuery): Promise<SegmentFinding[]>;
+
+  /** Append-only snapshots — a segment's performance over time, never overwritten. */
+  saveSegmentPerformance(performance: SegmentPerformance): Promise<void>;
+  /** Chronological (oldest first). */
+  listSegmentPerformance(profileId: string, segmentId: string): Promise<SegmentPerformance[]>;
 }

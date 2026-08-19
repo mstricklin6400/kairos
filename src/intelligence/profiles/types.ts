@@ -27,7 +27,15 @@ import type {
  */
 export type ExperimentMode = 'conservative' | 'balanced' | 'discovery';
 
-/** One distinct group inside a profile's audience. A profile may have many. */
+/**
+ * One distinct group inside a profile's DECLARED audience — the owner's own
+ * belief, captured at onboarding. A profile may have many. Its observed
+ * counterpart, derived from behavioral evidence rather than declared by the
+ * owner, is `ObservedAudienceSegment` (`../audience/types.ts`) — a separate
+ * type on purpose: an observed segment can exist with no declared match at
+ * all, and the two are never merged into one type. See the
+ * declared-vs-observed note there.
+ */
 export interface AudienceSegment {
   readonly id: string;
   readonly name: string;

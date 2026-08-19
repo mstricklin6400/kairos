@@ -18,12 +18,21 @@ import type { SocialProfile } from '../profiles/types.js';
 import type { Experiment, ExperimentObservation, Finding, Hypothesis } from '../science/types.js';
 import type { ProfileBrain, StrategyPrinciple } from '../strategy/types.js';
 import type {
+  AudienceSignal,
+  ObservedAudienceSegment,
+  SegmentFinding,
+  SegmentPerformance,
+} from '../audience/types.js';
+import type {
+  AudienceSignalQuery,
   BaselineQuery,
   ExperimentQuery,
   FindingQuery,
   HypothesisQuery,
   IntelligenceStore,
+  ObservedSegmentQuery,
   ProfileQuery,
+  SegmentFindingQuery,
   StrategyPrincipleQuery,
 } from './store.js';
 
@@ -61,6 +70,22 @@ export function findingsPath(workspaceRoot: string): string {
 
 export function baselinesPath(workspaceRoot: string): string {
   return join(intelligenceDir(workspaceRoot), 'baselines.jsonl');
+}
+
+export function audienceSignalsPath(workspaceRoot: string): string {
+  return join(intelligenceDir(workspaceRoot), 'audience-signals.jsonl');
+}
+
+export function observedSegmentsPath(workspaceRoot: string): string {
+  return join(intelligenceDir(workspaceRoot), 'observed-segments.jsonl');
+}
+
+export function segmentFindingsPath(workspaceRoot: string): string {
+  return join(intelligenceDir(workspaceRoot), 'segment-findings.jsonl');
+}
+
+export function segmentPerformancePath(workspaceRoot: string): string {
+  return join(intelligenceDir(workspaceRoot), 'segment-performance.jsonl');
 }
 
 async function appendLine(path: string, entry: unknown): Promise<void> {
@@ -262,5 +287,75 @@ export class JsonlIntelligenceStore implements IntelligenceStore {
     if (query.metric) baselines = baselines.filter((b) => b.metric === query.metric);
     baselines.sort((a, b) => (a.calculatedAt < b.calculatedAt ? 1 : -1));
     return baselines.slice(0, query.limit ?? 100);
+  }
+
+  async saveAudienceSignal(signal: AudienceSignal): Promise<void> {
+    await appendLine(audienceSignalsPath(this.workspaceRoot), signal);
+  }
+
+  async getAudienceSignal(id: string): Promise<AudienceSignal | null> {
+    const all = await readLatestByKey<AudienceSignal>(audienceSignalsPath(this.workspaceRoot), (s) => s.id);
+    return all.find((s) => s.id === id) ?? null;
+  }
+
+  async listAudienceSignals(query: AudienceSignalQuery): Promise<AudienceSignal[]> {
+    let signals = await readLatestByKey<AudienceSignal>(audienceSignalsPath(this.workspaceRoot), (s) => s.id);
+    signals = signals.filter((s) => s.profileId === query.profileId);
+    if (query.segmentId) {
+      signals = signals.filter((s) => s.segmentId === query.segmentId);
+    } else if (query.unclassifiedOnly) {
+      signals = signals.filter((s) => s.segmentId === undefined);
+    }
+    if (query.signalType) signals = signals.filter((s) => s.signalType === query.signalType);
+    if (query.from) signals = signals.filter((s) => s.observedAt >= query.from!);
+    if (query.to) signals = signals.filter((s) => s.observedAt <= query.to!);
+    signals.sort((a, b) => (a.observedAt < b.observedAt ? -1 : 1));
+    return signals.slice(0, query.limit ?? 500);
+  }
+
+  async saveObservedSegment(segment: ObservedAudienceSegment): Promise<void> {
+    await appendLine(observedSegmentsPath(this.workspaceRoot), segment);
+  }
+
+  async getObservedSegment(id: string): Promise<ObservedAudienceSegment | null> {
+    const all = await readLatestByKey<ObservedAudienceSegment>(observedSegmentsPath(this.workspaceRoot), (s) => s.id);
+    return all.find((s) => s.id === id) ?? null;
+  }
+
+  async listObservedSegments(query: ObservedSegmentQuery): Promise<ObservedAudienceSegment[]> {
+    let segments = await readLatestByKey<ObservedAudienceSegment>(observedSegmentsPath(this.workspaceRoot), (s) => s.id);
+    segments = segments.filter((s) => s.profileId === query.profileId);
+    if (query.status) segments = segments.filter((s) => s.status === query.status);
+    segments.sort((a, b) => (a.lastObservedAt < b.lastObservedAt ? 1 : -1));
+    return segments.slice(0, query.limit ?? 100);
+  }
+
+  async saveSegmentFinding(finding: SegmentFinding): Promise<void> {
+    await appendLine(segmentFindingsPath(this.workspaceRoot), finding);
+  }
+
+  async getSegmentFinding(id: string): Promise<SegmentFinding | null> {
+    const all = await readLatestByKey<SegmentFinding>(segmentFindingsPath(this.workspaceRoot), (f) => f.id);
+    return all.find((f) => f.id === id) ?? null;
+  }
+
+  async listSegmentFindings(query: SegmentFindingQuery): Promise<SegmentFinding[]> {
+    let findings = await readLatestByKey<SegmentFinding>(segmentFindingsPath(this.workspaceRoot), (f) => f.id);
+    findings = findings.filter((f) => f.profileId === query.profileId);
+    if (query.segmentId) findings = findings.filter((f) => f.segmentId === query.segmentId);
+    if (query.status) findings = findings.filter((f) => f.status === query.status);
+    findings.sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1));
+    return findings.slice(0, query.limit ?? 100);
+  }
+
+  async saveSegmentPerformance(performance: SegmentPerformance): Promise<void> {
+    await appendLine(segmentPerformancePath(this.workspaceRoot), performance);
+  }
+
+  async listSegmentPerformance(profileId: string, segmentId: string): Promise<SegmentPerformance[]> {
+    const all = await readLatestByKey<SegmentPerformance>(segmentPerformancePath(this.workspaceRoot), (p) => p.id);
+    return all
+      .filter((p) => p.profileId === profileId && p.segmentId === segmentId)
+      .sort((a, b) => (a.calculatedAt < b.calculatedAt ? -1 : 1));
   }
 }

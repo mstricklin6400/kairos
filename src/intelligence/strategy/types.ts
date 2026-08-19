@@ -18,6 +18,7 @@ import type {
 import type { Pattern, ProfileMonetizationContext } from '../profiles/types.js';
 import type { PerformanceBaseline } from '../performance/types.js';
 import type { Finding } from '../science/types.js';
+import type { DeclaredAudienceComparison } from '../audience/types.js';
 
 /** Where a strategy principle came from. Shares the knowledge-source vocabulary. */
 export type StrategySourceType = KnowledgeSourceType;
@@ -85,6 +86,21 @@ export interface SegmentLearning {
   readonly insights: readonly WeightedInsight[];
 }
 
+/**
+ * What Kairos has learned about this profile's audience — soft insight
+ * buckets (Milestone 1) plus, from Milestone 4, materialized references into
+ * the observed-audience stores (`../audience/`). Deliberately references and
+ * counts, not embedded copies: `ObservedAudienceSegment`, `AudienceSignal`
+ * and `SegmentFinding` records are the source of truth and live in
+ * `IntelligenceStore`; this is a fast-read summary for strategy code, kept
+ * current by whatever process last called `saveProfileBrain` — see the
+ * source-of-truth rules in `../storage/store.ts`.
+ *
+ * Never holds declared-audience data. `SocialProfile.audience` is the only
+ * source of truth for what the profile owner declared; nothing here is
+ * permitted to duplicate or overwrite it — see the declared-vs-observed
+ * note in `../audience/types.ts`.
+ */
 export interface AudienceIntelligence {
   readonly segmentLearnings: readonly SegmentLearning[];
   readonly languagePatterns: readonly WeightedInsight[];
@@ -92,6 +108,18 @@ export interface AudienceIntelligence {
   readonly motivations: readonly WeightedInsight[];
   /** How this audience tends to react — what earns replies, what gets scrolled. */
   readonly responsePatterns: readonly WeightedInsight[];
+  /** `ObservedAudienceSegment.id`s currently on record for this profile, any status. */
+  readonly observedSegmentIds: readonly string[];
+  /** The subset of `observedSegmentIds` whose `status` is `'emerging'`. */
+  readonly emergingSegmentIds: readonly string[];
+  /** `SegmentFinding.id`s currently on record for this profile. */
+  readonly segmentFindingIds: readonly string[];
+  /** Total `AudienceSignal`s recorded for this profile, across all segments and unclassified. */
+  readonly totalSignalCount: number;
+  /** Signals with no `segmentId` — evidence Kairos has not forced into an existing segment. */
+  readonly unclassifiedSignalCount: number;
+  readonly declaredVsObserved: DeclaredAudienceComparison;
+  readonly lastUpdatedAt?: IsoDateTime;
 }
 
 /**

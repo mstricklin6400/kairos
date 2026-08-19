@@ -388,62 +388,239 @@ hard-coded in Kairos Core. Adding a new niche, a new audience segment, or a new
 offer is **data entry**, not a code change.
 
 **Milestone 1 does not modify onboarding.** The existing interview
-(`src/onboarding/`) is untouched. A later milestone will map interview answers
-onto `SocialProfile` via an adapter.
+(`src/onboarding/`) is untouched. Milestone 3 added the mapping adapter
+(`src/intelligence/onboarding/`) from onboarding answers to `SocialProfile`,
+without touching that interview.
 
 ---
 
-## 16. Storage Architecture
+## 16. Audience Brain
+
+Milestone 4. Gives Kairos a formal model for learning who actually responds
+to a profile and how different audience segments behave — domain types,
+storage and deterministic aggregation only. No AI classification, no
+platform ingestion, no Science Engine, no Adaptive Strategy: those remain
+later milestones.
+
+### Declared Audience vs. Observed Audience
+
+Milestone 3 established the **declared audience**: `SocialProfile.audience`,
+what the profile owner believes their audience is, captured at onboarding.
+
+Milestone 4 introduces the **observed audience**: what permitted behavioral
+evidence indicates. The two live in structurally separate places and **must
+never overwrite one another** — `SocialProfile.audience` is written only by
+onboarding; everything below is written only by audience-evidence code, and
+`ProfileBrain.audienceIntelligence` never embeds or duplicates the declared
+side. This lets Kairos eventually ask: are we attracting the people we
+intended to attract? Which segments engage, click, convert, or generate
+revenue? Which segments talk a lot but never buy? Are new segments emerging
+that nobody declared?
+
+The future flow this milestone lays the foundation for:
+
+```
+Content / Interaction
+        ↓
+Audience Signal
+        ↓
+Segment Classification
+        ↓
+Aggregated Segment
+        ↓
+Content Response
+        ↓
+Business Outcome
+        ↓
+Segment Finding
+        ↓
+Updated Audience Intelligence
+```
+
+Milestone 4 builds the representation and the deterministic aggregation this
+flow needs. It does not build the classification step — that requires
+judgment Kairos does not yet have a validated way to automate.
+
+### Audience Signals
+
+`AudienceSignal` (`src/intelligence/audience/types.ts`) is the atom of
+observed evidence — one raw, timestamped, marketing-relevant read: a
+`source` (comment, reply, DM, profile context, click, lead, purchase,
+survey, manual, other), a `signalType` (problem, goal, question, objection,
+topic/content interest, experience level, intent, conversion, language
+pattern, engagement, other), optional links to the content, experiment or
+CreatorOS interaction it came from, and an optional `segmentId`.
+
+A signal with no `segmentId` is **unclassified**, a first-class, permanent
+state — not a placeholder waiting to be filled. Forcing every signal into an
+existing segment would manufacture confirmation bias, so Kairos does not do
+it. `classificationHistory` preserves any prior classification a signal
+carried, so a later reclassification never erases an earlier read: original
+signal → previous classification → current classification stays traceable
+without a full event-sourcing framework.
+
+### Observed Segments
+
+`ObservedAudienceSegment` is the current segment model derived from
+evidence — a `SegmentStatus` lifecycle (`emerging` → `active` →
+`established`, or `declining` → `archived`, deliberately its own vocabulary,
+not `HypothesisStatus` or `FindingStatus`), `firstObservedAt`/
+`lastObservedAt`, a `signalCount`, and soft-knowledge buckets
+(`characteristics`, `problems`, `goals`, `objections`, `topics`,
+`languagePatterns`) as `WeightedInsight[]`, the same discipline
+`NicheIntelligence` uses.
+
+An observed segment can exist with **no declared counterpart at all** —
+`matchedDeclaredSegmentId` is an optional, explicit, human/deterministic
+link, never inferred by semantic matching. This is the segment-discovery
+safeguard: Kairos must be able to conclude "I thought there were three
+audience segments, but the evidence suggests a fourth," and declared
+onboarding segments are never the only allowed segment identities.
+
+`memberEstimate` is optional and only ever set when there is a defensible
+basis for it — Kairos does not invent audience-size numbers.
+
+### Segment Findings
+
+`SegmentFinding` is a learned, audience-scoped conclusion: a `statement`
+plus the evidence that earns it (`supportingSignalIds`,
+`supportingExperimentIds`, `contradictingSignalIds` — both supporting and
+contradicting always tracked, the same discipline `Hypothesis` uses), scoped
+to one `profileId` and one `segmentId`. Its `SegmentFindingStatus`
+(`promising` / `supported` / `contradicted` / `decaying`) is deliberately
+**not** `FindingStatus` — a `SegmentFinding` is never automatically
+equivalent to a globally validated Kairos `Finding`; promoting an
+audience-specific conclusion to global truth, if it ever happens, is an
+explicit Science Engine decision for a later milestone.
+
+### Segment Performance
+
+`SegmentPerformance` is a snapshot of one segment's aggregated numbers
+across the Milestone 1 measurement hierarchy — `SegmentMetricTotal[]` reuses
+`PerformanceMetric` rather than a second metric system, with an optional
+`shareOfProfileTotal` per metric. This is what eventually lets Kairos tell
+an **engagement audience** apart from a **buyer audience**:
+
+```
+Segment A — 52% of replies, 18% of clicks, 8% of sales   (talks, doesn't buy)
+Segment B — 21% of replies, 43% of clicks, 61% of sales  (buys, doesn't talk)
+```
+
+Snapshots are append-only by their own `id`, the same discipline as
+`ExperimentObservation`: a recalculation never destroys an earlier read of
+what a segment's numbers were at the time.
+
+### Declared vs. Observed Comparison
+
+`DeclaredAudienceComparison` names four states — `aligned`,
+`partially_aligned`, `divergent`, `insufficient_evidence` — but Milestone 4
+ships no semantic-matching capability between a declared audience
+description and observed segment characteristics. Its deterministic helper
+(`compareDeclaredToObserved`) therefore **always evaluates to
+`insufficient_evidence` today**; the other three states exist in the type
+only for a future milestone that adds real declared-vs-observed matching.
+Every new profile starts, and stays, at `insufficient_evidence` until that
+milestone exists. Kairos does not pretend to know alignment it cannot
+currently compute.
+
+### Audience Intelligence — the materialized summary
+
+`ProfileBrain.audienceIntelligence` gained, in Milestone 4, references and
+counts into the stores above — `observedSegmentIds`, `emergingSegmentIds`,
+`segmentFindingIds`, `totalSignalCount`, `unclassifiedSignalCount`,
+`declaredVsObserved` — not embedded copies. The full objects live in their
+own stores; this is a fast-read summary for strategy code, kept current by
+whatever process last saved the brain.
+
+### Privacy / Ethics Boundary
+
+Every audience-evidence type is scoped to **marketing-relevant expressed or
+behavioral signals**: a stated problem, a stated goal, a question, an
+objection, a topic of interest, an experience level, an intent or conversion
+action, a vocabulary pattern, an engagement action. None of these types
+carry a field for race/ethnicity, religion, sexual orientation, medical
+conditions, political affiliation, criminal history, or any other sensitive
+personal attribute, and none should ever gain one without a separate,
+explicit, lawfully-reviewed product decision. There is no per-individual
+profile type anywhere in this model — only aggregated, revisable segments.
+Kairos models "people expressing problem X," never "person Y has trait Z."
+
+**Observed behavior does not automatically prove identity or motivation.**
+Audience segment conclusions remain probabilistic (`confidence`) and
+revisable (the status lifecycles above) — never treated as settled fact.
+
+### Source-of-Truth Rules
+
+- **`SocialProfile.audience`** — the owner-declared audience hypothesis/configuration. Written only by onboarding.
+- **`AudienceSignal` store** — raw observed behavioral evidence. Append-only by id; a reclassification updates `segmentId` on the same id without losing `classificationHistory`.
+- **`ObservedAudienceSegment` store** — the current segment model derived from evidence. Upserted by id, allowed to evolve.
+- **`SegmentFinding` store** — learned, audience-scoped conclusions. Upserted by id, evidence-linked, never auto-promoted to a global `Finding`.
+- **`SegmentPerformance`** — append-only snapshots by id, never overwritten.
+- **`ProfileBrain.audienceIntelligence`** — materialized summary/references for fast strategy reads. Never the source of truth for any of the above, and never permitted to duplicate or overwrite `SocialProfile.audience`.
+
+No layer in this list silently overwrites another.
+
+---
+
+## 17. Storage Architecture
 
 Kairos already has a storage port at `src/storage/store.ts` with a JSONL
 adapter (`src/storage/jsonlStore.ts`), designed so a Postgres adapter can
 replace it without touching callers.
 
-Intelligence storage will follow the **same discipline**:
+Intelligence storage follows the **same discipline**, built in Milestone 2
+(`src/intelligence/storage/store.ts` + `jsonlIntelligenceStore.ts`) and
+extended by Milestone 4 for the audience stores:
 
-- an intelligence port defined as an interface,
-- JSONL-on-disk as the first adapter (append-only, latest-line-wins per `id`),
+- an intelligence port defined as an interface (`IntelligenceStore`),
+- JSONL-on-disk as the first adapter (append-only; mutable knowledge is
+  latest-line-wins per `id`, raw evidence — `ExperimentObservation`,
+  `AudienceSignal`, `SegmentPerformance` — is never collapsed),
 - a durable adapter later, without changing callers.
 
-All intelligence domain types therefore carry a stable `id` and are plain,
-serializable, JSON-round-trippable data. No classes, no methods, no
-non-serializable fields.
+All intelligence domain types therefore carry a stable `id` (or, for
+`PerformanceBaseline`, a stable derived key) and are plain, serializable,
+JSON-round-trippable data. No classes, no methods, no non-serializable
+fields.
 
-**Milestone 1 ships types only — no store, no adapter, no persistence.**
+**Milestone 1 shipped types only. Milestone 2 added the store. Milestone 3
+added the onboarding adapter. Milestone 4 added the audience stores.**
 
 ---
 
-## 17. Battle Engine (Future Module)
+## 18. Battle Engine (Future Module)
 
 The Battle Engine is the future component that turns the domain model into
 continuous competition: pairing variants, allocating posting capacity between
 exploitation and exploration according to `experimentMode`, promoting winners,
 retiring losers and scheduling revalidation of decaying findings.
 
-It is deliberately **out of scope** for Milestone 1. The domain model is built
-so the Battle Engine can be added as a consumer — `pairId`, `variant`,
+It is deliberately **out of scope** through Milestone 4. The domain model is
+built so the Battle Engine can be added as a consumer — `pairId`, `variant`,
 `controlVariable`, `testVariables`, `experimentMode` and `currentAllocations`
 all exist for it — without any change to the types below it.
 
 ---
 
-## 18. Development Milestones
+## 19. Development Milestones
 
 | Milestone | Scope | Status |
 | --- | --- | --- |
-| **1 — Intelligence Foundation** | Architecture doc + `src/intelligence/` domain model + tests | **This milestone** |
-| 2 — Intelligence Storage | Intelligence store port + JSONL adapter | Planned |
-| 3 — Profile Onboarding Mapping | Adapter from onboarding answers → `SocialProfile` | Planned |
-| 4 — Measurement Ingestion | CreatorOS analytics → `ExperimentResult`, baseline calculation | Planned |
-| 5 — Science Engine | Hypothesis lifecycle, finding emission, decay, pattern detection | Planned |
-| 6 — Battle Engine | Variant allocation, winner promotion, revalidation scheduling | Planned |
-| 7 — Social Genome | Commercial dashboard/product surface | Planned |
+| 1 — Intelligence Foundation | Architecture doc + `src/intelligence/` domain model + tests | Done |
+| 2 — Intelligence Storage | Intelligence store port + JSONL adapter | Done |
+| 3 — Profile Onboarding Mapping | Adapter from onboarding answers → `SocialProfile` + `ProfileBrain` init | Done |
+| **4 — Audience Brain** | Audience signals, observed segments, segment findings, segment performance, declared-vs-observed comparison | **This milestone** |
+| 5 — Strategy & Research Intelligence | Niche/audience research process, playbook ingestion | Planned |
+| 6 — Measurement Ingestion | CreatorOS analytics → `ExperimentResult`, baseline calculation | Planned |
+| 7 — Science Engine | Hypothesis lifecycle, finding emission, decay, pattern detection, audience classification | Planned |
+| 8 — Battle Engine | Variant allocation, winner promotion, revalidation scheduling | Planned |
+| 9 — Social Genome | Commercial dashboard/product surface | Planned |
 
 Each milestone is additive and must leave CreatorOS execution untouched.
 
 ---
 
-## 19. Non-Goals
+## 20. Non-Goals
 
 Explicitly **not** part of Kairos Intelligence, now or later:
 
@@ -453,15 +630,22 @@ Explicitly **not** part of Kairos Intelligence, now or later:
 - Replacing or shadowing `creatorOsAccountId`.
 - A parallel platform abstraction that diverges from the CreatorOS platform
   matrix.
-- Ecommerce/payment integration (offers are descriptive only in Milestone 1).
+- Ecommerce/payment integration (offers are descriptive only through
+  Milestone 4).
+- Individual psychological dossiers or sensitive-trait inference of any kind
+  (race/ethnicity, religion, sexual orientation, medical conditions,
+  political affiliation, criminal history) — see §16's privacy boundary.
 
-Explicitly **not** part of Milestone 1:
+Explicitly **not** part of Milestone 4:
 
-- AI agents, LLM calls, prompt engineering.
-- The research process that populates niche/audience intelligence.
-- Baseline calculation, pattern detection, winner/failure detection.
-- The Battle Engine, the Science Engine runtime, Social Genome UI.
-- Onboarding changes, dashboard changes, persistence.
+- AI classification of audience signals or segments; embeddings; clustering.
+- Live platform ingestion of comments/replies/DMs — the vocabulary exists,
+  no adapter produces it yet.
+- Personalizing public feeds.
+- Semantic declared-vs-observed matching (`compareDeclaredToObserved` always
+  returns `insufficient_evidence` today — see §16).
+- The Science Engine, Adaptive Strategy, the Battle Engine.
+- Onboarding changes, dashboard changes, CreatorOS execution changes.
 
 ---
 
