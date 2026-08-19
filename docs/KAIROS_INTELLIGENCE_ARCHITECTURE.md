@@ -1121,7 +1121,174 @@ dashboard. It is not UI, and this milestone builds none.
 
 ---
 
-## 20. Storage Architecture
+## 20. Adaptive Strategy Engine
+
+Milestone 8. The layer that turns evidence into a decision.
+
+```
+SCIENCE ENGINE      "What did the evidence show?"
+        ↓
+ADAPTIVE STRATEGY   "What should this profile do next?"
+        ↓
+CREATOROS           "Execute the approved action."
+```
+
+The question it answers, for one profile at a time: *given this objective,
+this platform, this niche, this audience, this account stage, this evidence
+and these active experiments — what is the most justified next action?*
+
+Everything it produces is a **proposal**. Recommendations are always created
+`proposed`; nothing is auto-approved, nothing is published, no content is
+written, and no LLM is involved.
+
+### Objective-first optimization
+
+A recommendation is scored against the profile's **primary objective**, not
+against engagement in general. A pattern that produces huge replies is
+valuable to a `conversation` profile and largely beside the point for a
+`revenue` one — `computePriorityScore` drops the objective term from 0.4 to
+0.05 on a mismatch, so mismatched evidence surfaces (with its reasoning) but
+does not lead. Kairos does not optimize universally for engagement.
+
+### Exploration vs. exploitation
+
+`StrategyPolicy.explorationRatio` maps the profile's existing
+`ExperimentMode` onto a split: `conservative` 0.2, `balanced` 0.35,
+`discovery` 0.6. As with `SciencePolicy`, **these are configurable
+operational choices, not scientific truths** — every field is overrideable.
+
+### Strategy constraints
+
+`deriveConstraints` reads binding limits off stored configuration —
+never guesses:
+
+- **posting_capacity** — the profile's own stated posts/day and posts/week.
+- **brand_rule** — declared style constraints, topics to avoid, compliance rules.
+- **active_experiment** — the protection that preserves experimental validity.
+- **offer_availability** — no active offers means conversion tests cannot be proposed blindly.
+
+**Active-experiment protection** is the important one: while a controlled
+test is in flight, its `controlVariable` and `testVariables` are locked, so
+Adaptive Strategy cannot recommend changing the very things the experiment
+is measuring. Testing hook type must not come with a simultaneous
+recommendation to change topic, CTA or format.
+
+**Posting capacity** is respected rather than exceeded: a profile that says
+2 posts/day is never handed a 10-posts/day recommendation as routine advice.
+Exceeding capacity is only representable as an explicit experiment that
+requires a capacity change.
+
+### Content allocation
+
+`recommendContentAllocation` rebalances content pillars under three
+deliberate protections:
+
+1. No pillar moves more than `maximumAllocationShiftPerPlan` in one plan —
+   strategy should not whipsaw.
+2. Evidence below `thinEvidenceSampleThreshold` is damped to half effect —
+   a single good post must not rewrite the content mix.
+3. No pillar falls below `minimumPillarAllocation` — a pillar starved to
+   zero can never generate the evidence that would rehabilitate it, which
+   would make the decision self-fulfilling.
+
+Every allocation carries its `previousShare` and a reason, so a change is
+never silent. **No content is generated** — the engine decides that a
+quantified-outcome hook should be tested, never what the hook says.
+
+### Winning pattern use
+
+`repeat_validated_pattern` is offered only for a `validated` finding at or
+above `minimumConfidenceToExploit`. A finding marked validated but carrying
+low confidence yields `collect_more_evidence` instead. Nothing is repeated
+forever: freshness, sample size, confidence and decay are all consulted, and
+a stale finding routes to revalidation instead of reuse.
+
+### Failure memory
+
+Rejected findings are memory, not noise. `countPatternFailures` counts how
+often a pattern has been rejected for this profile; past
+`failureMemoryThreshold` the action becomes `deprioritize_pattern` with a
+penalty applied to its priority score. A repeatedly-failed approach does not
+keep resurfacing as a fresh idea — but it remains reachable through
+deliberate revalidation when conditions change.
+
+### Revalidation
+
+Stale and decaying findings route through the Science Engine's own
+`identifyRevalidationCandidates`; Adaptive Strategy converts them into
+`revalidate_finding` recommendations rather than re-implementing decay
+assessment.
+
+### Information gain
+
+Some uncertainty is worth resolving and some is not.
+`computeInformationGain` multiplies two operational terms:
+
+- **uncertainty** — peaks at maximum ambiguity (confidence 0.5 → 1.0; both
+  0.0 and 1.0 → 0, because there is nothing left to learn at either extreme).
+- **objectiveRelevance** — 1.0 when the dependent metric serves the
+  profile's objective, 0.2 when it does not.
+
+Two questions can both have weak evidence; the one whose answer would
+actually change what this profile does ranks higher. This is an operational,
+explainable score — deliberately not an information-theoretic quantity.
+
+### Recommendation basis — "why does Kairos recommend this?"
+
+Every recommendation carries a `RecommendationBasis`: finding ids, segment
+finding ids, hypothesis ids, experiment ids, strategy principle ids, claim
+ids, audience segment ids, the constraints that shaped it, and a
+deterministically-composed rationale. Every id points at a real stored
+record. This is what makes the recommendation auditable — and what a future
+Social Genome surface reads instead of a generated explanation.
+
+### Unknowns
+
+**UNKNOWN remains a valid answer.** When evidence is insufficient the engine
+recommends `run_experiment`, `collect_more_evidence` or `do_nothing_yet` —
+it never fabricates "this is what works." A plan lists its `unknowns`
+explicitly (what drives the objective, whether any validated pattern exists,
+who actually responds), because a plan that states what it cannot answer is
+more useful than one that quietly fills the gaps.
+
+### Research intelligence integration
+
+A `StrategyPrinciple` (§17) can seed a **candidate experiment** and nothing
+more. A playbook claim can only ever produce `run_experiment`, never
+`repeat_validated_pattern`, and only when the profile has no first-party
+evidence of its own on the subject — **first-party evidence always outranks
+imported advice**. Milestone 10's Intelligence Waterfall will generalize
+this precedence.
+
+### Human approval
+
+The architecture keeps recommendation and execution separate:
+
+```
+recommend  →  human approves  →  CreatorOS executes later
+```
+
+Statuses run `proposed` → `approved` → `active` → `completed`, with
+`rejected` / `expired` / `superseded` available. The engine only ever
+creates `proposed`; `setRecommendationStatus` is the human seam.
+
+### Strategy versioning
+
+`AdaptiveStrategyPlan` is a point-in-time snapshot, explicitly not permanent
+truth. A new plan carries `supersedesPlanId` and an incremented `version`;
+the earlier plan is retained, so the reasoning behind a superseded decision
+survives the decision changing. Plans also record `policyVersion`, so an old
+plan stays interpretable after the ruleset moves on.
+
+### What this layer never does
+
+It does not recompute baselines, effect sizes, confidence, hypothesis
+evaluation, finding emission or decay assessment. Those have exactly one
+owner — the Science Engine — and Adaptive Strategy reads them.
+
+---
+
+## 21. Storage Architecture
 
 Kairos already has a storage port at `src/storage/store.ts` with a JSONL
 adapter (`src/storage/jsonlStore.ts`), designed so a Postgres adapter can
@@ -1130,8 +1297,8 @@ replace it without touching callers.
 Intelligence storage follows the **same discipline**, built in Milestone 2
 (`src/intelligence/storage/store.ts` + `jsonlIntelligenceStore.ts`) and
 extended by Milestone 4 (audience stores), Milestone 5 (research stores),
-Milestone 6 (measurement/attribution stores) and Milestone 7 (hypothesis
-evidence):
+Milestone 6 (measurement/attribution stores), Milestone 7 (hypothesis
+evidence) and Milestone 8 (recommendations and strategy plans):
 
 - an intelligence port defined as an interface (`IntelligenceStore`),
 - JSONL-on-disk as the first adapter (append-only; mutable knowledge is
@@ -1147,6 +1314,12 @@ observations and baselines they came from. Only the comparison ids
 referenced by a stored `HypothesisEvidence` record matter for audit, and
 those travel on the evidence record itself.
 
+`StrategyRecommendation` and `AdaptiveStrategyPlan` **are** persisted, because
+they are decisions rather than calculations: a plan records what Kairos
+recommended, on what evidence, under which policy version, at a point in
+time. Plans are versioned rather than overwritten — `supersedesPlanId`
+chains each plan to the one it replaced, and the earlier plan is retained.
+
 All intelligence domain types therefore carry a stable `id` (or, for
 `PerformanceBaseline`, a stable derived key) and are plain, serializable,
 JSON-round-trippable data. No classes, no methods, no non-serializable
@@ -1156,27 +1329,29 @@ fields.
 added the onboarding adapter. Milestone 4 added the audience stores.
 Milestone 5 added the research stores. Milestone 6 added the
 measurement/attribution stores. Milestone 7 added the hypothesis-evidence
-store.**
+store. Milestone 8 added the recommendation and strategy-plan stores.**
 
 ---
 
-## 21. Battle Engine (Future Module)
+## 22. Battle Engine (Future Module)
 
 The Battle Engine is the future component that turns the domain model into
 continuous competition: pairing variants, allocating posting capacity between
 exploitation and exploration according to `experimentMode`, promoting winners,
 retiring losers and scheduling revalidation of decaying findings.
 
-It is deliberately **out of scope** through Milestone 7. The domain model is
+It is deliberately **out of scope** through Milestone 8. The domain model is
 built so the Battle Engine can be added as a consumer — `pairId`, `variant`,
 `controlVariable`, `testVariables`, `experimentMode`,
-`currentAllocations`, and now the Science Engine's
-`identifyRevalidationCandidates` output — without any change to the types
-below it.
+`currentAllocations`, the Science Engine's
+`identifyRevalidationCandidates` output, and now Adaptive Strategy's
+`StrategyConstraint` mechanism (which a battle protocol can use to lock
+controlled variables for the duration of a controlled test) — without any
+change to the types below it.
 
 ---
 
-## 22. Development Milestones
+## 23. Development Milestones
 
 | Milestone | Scope | Status |
 | --- | --- | --- |
@@ -1186,16 +1361,17 @@ below it.
 | 4 — Audience Brain | Audience signals, observed segments, segment findings, segment performance, declared-vs-observed comparison | Done |
 | 5 — Strategy & Research Intelligence | Research sources, strategy claims, observed associations, causal status, provenance, `StrategyPrinciple` evidence links | Done |
 | 6 — Measurement Ingestion & Attribution | Raw CreatorOS snapshots, normalized post/profile observations, first-party attribution events, tracking context, raw/normalized lineage | Done |
-| **7 — Science Engine** | Baselines, comparisons, objective-metric policy, paired analysis, hypothesis evidence & evaluation, operational confidence, finding emission, decay/revalidation, science reports | **This milestone** |
-| 8 — Adaptive Strategy | Turning findings into next-action recommendations | Planned |
-| 9 — Battle Engine | Variant allocation, winner promotion, revalidation scheduling | Planned |
-| 10 — Social Genome | Commercial dashboard/product surface | Planned |
+| 7 — Science Engine | Baselines, comparisons, objective-metric policy, paired analysis, hypothesis evidence & evaluation, operational confidence, finding emission, decay/revalidation, science reports | Done |
+| **8 — Adaptive Strategy Engine** | Next-best-action recommendations, exploration/exploitation policy, constraints, content allocation, failure memory, information gain, strategy plans & versioning | **This milestone** |
+| 9 — Battle Engine | Seasons, competitors, divisions, matchups, protocol pre-registration, scoring, standings | Planned |
+| 10 — Intelligence Waterfall | Cross-profile/niche/platform evidence precedence and synthesis | Planned |
+| 11 — Social Genome | Commercial dashboard/product surface | Planned |
 
 Each milestone is additive and must leave CreatorOS execution untouched.
 
 ---
 
-## 23. Non-Goals
+## 24. Non-Goals
 
 Explicitly **not** part of Kairos Intelligence, now or later:
 
@@ -1206,7 +1382,7 @@ Explicitly **not** part of Kairos Intelligence, now or later:
 - A parallel platform abstraction that diverges from the CreatorOS platform
   matrix.
 - Ecommerce/payment integration (offers are descriptive only through
-  Milestone 7; `AttributionEvent` records outcomes, it does not process
+  Milestone 8; `AttributionEvent` records outcomes, it does not process
   payments).
 - Individual psychological dossiers or sensitive-trait inference of any kind
   (race/ethnicity, religion, sexual orientation, medical conditions,
@@ -1221,6 +1397,9 @@ Explicitly **not** part of Kairos Intelligence, now or later:
 - Deriving a causal `Finding` from an `ObservedAssociation` without
   controlled experimental evidence — see §19's observed-association
   safeguard.
+- Executing a recommendation without human approval, or letting outside
+  advice become a validated action — see §20's approval seam and
+  research-integration rule.
 
 Explicitly **not** part of Milestone 4:
 
@@ -1273,9 +1452,24 @@ Explicitly **not** part of Milestone 7:
 - Persisting derived calculations (`ComparisonResult`, `ScienceReport`)
   that are recomputable from stored evidence.
 
+Explicitly **not** part of Milestone 8:
+
+- Any LLM call — every recommendation reason and rationale is composed
+  deterministically.
+- Content generation: the engine decides what KIND of test or pattern to
+  pursue ("test a quantified-outcome hook"), never the final copy.
+- Automatic execution or self-approval: recommendations are always created
+  `proposed`, and `setRecommendationStatus` is the human seam.
+- Recomputing anything the Science Engine owns — baselines, effect sizes,
+  confidence, hypothesis evaluation, finding emission, decay assessment.
+- Cross-profile evidence precedence and synthesis; that is Milestone 10's
+  Intelligence Waterfall.
+- Presenting `priorityScore` or `InformationGainScore` as statistical
+  quantities. Both are operational, explainable scores.
+
 Explicitly **not** part of any milestone so far:
 
-- Adaptive Strategy, the Battle Engine, Social Genome.
+- The Battle Engine, the Intelligence Waterfall, Social Genome.
 - Onboarding changes, dashboard changes, CreatorOS execution changes.
 
 ---

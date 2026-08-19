@@ -31,9 +31,12 @@ import type {
   ProfileMeasurementSnapshot,
 } from '../measurement/types.js';
 import type { HypothesisEvidence } from '../science/analysisTypes.js';
+import type { AdaptiveStrategyPlan, StrategyRecommendation } from '../adaptive/types.js';
 import type {
+  AdaptiveStrategyPlanQuery,
   AttributionEventQuery,
   HypothesisEvidenceQuery,
+  StrategyRecommendationQuery,
   AudienceSignalQuery,
   BaselineQuery,
   ExperimentQuery,
@@ -129,6 +132,14 @@ export function attributionEventsPath(workspaceRoot: string): string {
 
 export function hypothesisEvidencePath(workspaceRoot: string): string {
   return join(intelligenceDir(workspaceRoot), 'hypothesis-evidence.jsonl');
+}
+
+export function strategyRecommendationsPath(workspaceRoot: string): string {
+  return join(intelligenceDir(workspaceRoot), 'strategy-recommendations.jsonl');
+}
+
+export function adaptiveStrategyPlansPath(workspaceRoot: string): string {
+  return join(intelligenceDir(workspaceRoot), 'adaptive-strategy-plans.jsonl');
 }
 
 async function appendLine(path: string, entry: unknown): Promise<void> {
@@ -534,5 +545,46 @@ export class JsonlIntelligenceStore implements IntelligenceStore {
     if (query.supports !== undefined) evidence = evidence.filter((e) => e.supports === query.supports);
     evidence.sort((a, b) => (a.measuredAt < b.measuredAt ? -1 : 1));
     return evidence.slice(0, query.limit ?? 500);
+  }
+
+  async saveStrategyRecommendation(recommendation: StrategyRecommendation): Promise<void> {
+    await appendLine(strategyRecommendationsPath(this.workspaceRoot), recommendation);
+  }
+
+  async getStrategyRecommendation(id: string): Promise<StrategyRecommendation | null> {
+    const all = await readLatestByKey<StrategyRecommendation>(strategyRecommendationsPath(this.workspaceRoot), (r) => r.id);
+    return all.find((r) => r.id === id) ?? null;
+  }
+
+  async listStrategyRecommendations(query: StrategyRecommendationQuery): Promise<StrategyRecommendation[]> {
+    let recommendations = await readLatestByKey<StrategyRecommendation>(
+      strategyRecommendationsPath(this.workspaceRoot),
+      (r) => r.id,
+    );
+    recommendations = recommendations.filter((r) => r.profileId === query.profileId);
+    if (query.status) recommendations = recommendations.filter((r) => r.status === query.status);
+    if (query.recommendationType) recommendations = recommendations.filter((r) => r.recommendationType === query.recommendationType);
+    if (query.action) recommendations = recommendations.filter((r) => r.action === query.action);
+    recommendations.sort((a, b) =>
+      b.priorityScore !== a.priorityScore ? b.priorityScore - a.priorityScore : a.id.localeCompare(b.id),
+    );
+    return recommendations.slice(0, query.limit ?? 200);
+  }
+
+  async saveAdaptiveStrategyPlan(plan: AdaptiveStrategyPlan): Promise<void> {
+    await appendLine(adaptiveStrategyPlansPath(this.workspaceRoot), plan);
+  }
+
+  async getAdaptiveStrategyPlan(id: string): Promise<AdaptiveStrategyPlan | null> {
+    const all = await readLatestByKey<AdaptiveStrategyPlan>(adaptiveStrategyPlansPath(this.workspaceRoot), (p) => p.id);
+    return all.find((p) => p.id === id) ?? null;
+  }
+
+  async listAdaptiveStrategyPlans(query: AdaptiveStrategyPlanQuery): Promise<AdaptiveStrategyPlan[]> {
+    let plans = await readLatestByKey<AdaptiveStrategyPlan>(adaptiveStrategyPlansPath(this.workspaceRoot), (p) => p.id);
+    plans = plans.filter((p) => p.profileId === query.profileId);
+    // Newest version first; every earlier version is retained.
+    plans.sort((a, b) => b.version - a.version);
+    return plans.slice(0, query.limit ?? 100);
   }
 }

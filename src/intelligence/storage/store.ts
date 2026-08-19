@@ -73,6 +73,20 @@
  * - Outside knowledge (any `StrategyClaim`) never becomes a `Finding`
  *   automatically — nothing in this store writes to the Findings store.
  *
+ * SOURCE-OF-TRUTH RULES — Adaptive Strategy (Milestone 8)
+ * ------------------------------------------------------------------------
+ * - `StrategyRecommendation` and `AdaptiveStrategyPlan` are auditable
+ *   proposals, upserted by id. A recommendation is always created
+ *   `proposed`; only an explicit status change (a human, or a future
+ *   approval surface) advances it, and nothing here executes anything.
+ * - Plans are versioned rather than overwritten: a new plan carries
+ *   `supersedesPlanId` pointing at the previous one, which is retained, so
+ *   the reasoning behind a superseded decision survives the decision
+ *   changing.
+ * - Adaptive Strategy READS Science Engine output and never recomputes it.
+ *   Baselines, confidence, finding status and decay assessment have exactly
+ *   one owner, and it is not this layer.
+ *
  * SOURCE-OF-TRUTH RULES — the Science Engine (Milestone 7)
  * ------------------------------------------------------------------------
  * - `HypothesisEvidence` is append-preserving audit evidence: one
@@ -154,6 +168,13 @@ import type {
   ProfileMeasurementSnapshot,
 } from '../measurement/types.js';
 import type { HypothesisEvidence } from '../science/analysisTypes.js';
+import type {
+  AdaptiveStrategyPlan,
+  NextBestAction,
+  RecommendationStatus,
+  RecommendationType,
+  StrategyRecommendation,
+} from '../adaptive/types.js';
 
 export interface ProfileQuery {
   readonly platform?: Platform;
@@ -285,6 +306,19 @@ export interface HypothesisEvidenceQuery {
   readonly limit?: number;
 }
 
+export interface StrategyRecommendationQuery {
+  readonly profileId: string;
+  readonly status?: RecommendationStatus;
+  readonly recommendationType?: RecommendationType;
+  readonly action?: NextBestAction;
+  readonly limit?: number;
+}
+
+export interface AdaptiveStrategyPlanQuery {
+  readonly profileId: string;
+  readonly limit?: number;
+}
+
 export interface IntelligenceStore {
   /** Upsert by id. */
   saveProfile(profile: SocialProfile): Promise<void>;
@@ -386,4 +420,14 @@ export interface IntelligenceStore {
   /** Append-preserving audit evidence. Contradicting records are never deleted — see module doc. */
   saveHypothesisEvidence(evidence: HypothesisEvidence): Promise<void>;
   listHypothesisEvidence(query: HypothesisEvidenceQuery): Promise<HypothesisEvidence[]>;
+
+  /** Upsert by id — an auditable proposal. Created `proposed`; only an explicit status change advances it. */
+  saveStrategyRecommendation(recommendation: StrategyRecommendation): Promise<void>;
+  getStrategyRecommendation(id: string): Promise<StrategyRecommendation | null>;
+  listStrategyRecommendations(query: StrategyRecommendationQuery): Promise<StrategyRecommendation[]>;
+
+  /** Upsert by id — versioned, never overwritten. A superseded plan is retained; see module doc. */
+  saveAdaptiveStrategyPlan(plan: AdaptiveStrategyPlan): Promise<void>;
+  getAdaptiveStrategyPlan(id: string): Promise<AdaptiveStrategyPlan | null>;
+  listAdaptiveStrategyPlans(query: AdaptiveStrategyPlanQuery): Promise<AdaptiveStrategyPlan[]>;
 }

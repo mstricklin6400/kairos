@@ -141,6 +141,24 @@ export type {
 export { DEFAULT_OBJECTIVE_METRICS, DEFAULT_SCIENCE_POLICY } from './science/analysisTypes.js';
 
 export type {
+  AdaptiveStrategyPlan,
+  ExperimentAllocation,
+  InformationGainScore,
+  NextBestAction,
+  PillarAllocation,
+  RecommendationBasis,
+  RecommendationStatus,
+  RecommendationType,
+  StrategyConstraint,
+  StrategyConstraintSource,
+  StrategyPolicy,
+  StrategyRecommendation,
+  StrategyUnknown,
+} from './adaptive/types.js';
+
+export { DEFAULT_STRATEGY_POLICY } from './adaptive/types.js';
+
+export type {
   AudienceIntelligence,
   NicheIntelligence,
   ProfileBrain,
