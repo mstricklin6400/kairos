@@ -81,6 +81,10 @@ export interface Offer {
   readonly currency?: string;
   readonly type?: OfferType;
   readonly active: boolean;
+  /** References `AudienceSegment.id` — absent means the offer targets the whole profile audience. */
+  readonly targetAudienceSegmentId?: string;
+  /** What this offer is meant to convert toward, e.g. `sale`, `lead`. */
+  readonly conversionObjective?: GrowthObjective;
 }
 
 /** What the profile sounds like and what it must never do. */
@@ -91,8 +95,10 @@ export interface ProfileIdentity {
   readonly faceless: boolean;
   /** Voice adjectives, e.g. `['blunt', 'technical', 'warm']`. */
   readonly voice: readonly string[];
-  /** Hard rules: "no emoji", "never say 'game-changer'", "British spelling". */
+  /** Hard rules: "no emoji", "never say 'game-changer'", "British spelling". Also where topic/compliance/claims restrictions and other onboarding-declared constraints live. */
   readonly styleConstraints?: readonly string[];
+  /** What this account is about, its unique angle, credibility context and differentiation — in the owner's own words. */
+  readonly positioning?: string;
 }
 
 export interface ProfileMarket {
