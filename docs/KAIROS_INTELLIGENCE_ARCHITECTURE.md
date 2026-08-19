@@ -754,7 +754,156 @@ Those adapters are explicitly future-milestone work.
 
 ---
 
-## 18. Storage Architecture
+## 18. Measurement Ingestion & Attribution
+
+Milestone 6. Closes the execution/measurement loop:
+
+```
+Kairos → CreatorOS execution → social platform → CreatorOS analytics
+→ Kairos observation storage
+```
+
+**CreatorOS retrieves platform data. Kairos interprets and stores it.**
+Kairos never re-implements platform analytics retrieval — it calls the
+CreatorOS client's existing analytics methods and normalizes what comes
+back.
+
+### CreatorOS analytics, as they actually exist
+
+Inspected before writing any code: `src/client/client.ts` exposes
+`getAnalytics` (per-post, with per-platform breakdown, or a paginated
+overview), `followerStats` (per-account growth over a date range),
+`bestTimeToPost`, `dailyMetrics` (daily aggregate + per-platform
+breakdown) and `postTimeline` — every one of them typed `Promise<unknown>`.
+There is no committed CreatorOS analytics response schema anywhere in this
+repository; `CreatePostBody` and `Post` (`src/client/types.ts`) both carry
+an open index signature, and the one place a shape is informally relied on
+(`src/onboarding/interview.ts` reading `followerStats()`) casts inline to
+`{ accounts?: [{ platform, username, currentFollowers, growth,
+growthPercentage }] }` rather than a committed type. Kairos's raw snapshot
+below reflects that reality — an open record, not an invented schema.
+
+### Raw snapshots
+
+`CreatorOsMeasurementSnapshot` (`measurement/types.ts`) preserves exactly
+what CreatorOS returned for one analytics pull — `rawMetrics` is an open
+`Record<string, unknown>`, never forced into a fixed shape CreatorOS itself
+doesn't guarantee. Never contains secrets or tokens. Keyed by a
+deterministic id derived from `(creatorOsPostId, capturedAt)` when both are
+known, so re-ingesting the same pull is idempotent rather than duplicated,
+while a genuinely later measurement (a different `capturedAt`) always gets
+its own id and coexists.
+
+### Normalized observations
+
+`PostMeasurement` maps a raw snapshot into the existing
+`PerformanceMetric`/`ExperimentResult` vocabulary — no second metric
+system. `mapCreatorOsPostAnalytics` (`measurement/mappers.ts`) looks each
+metric up under a small table of candidate field-name aliases (camelCase
+and snake_case both, mirroring the dual-naming convention CreatorOS itself
+already uses for TikTok fields), and leaves a field absent — never
+zeroed — when CreatorOS didn't return it. Platform-native pairs stay
+distinct exactly as §8 requires: impressions ≠ views, replies ≠ comments,
+reposts ≠ shares, saves ≠ bookmarks. `leads`, `sales`, `revenue` and
+`followersGained` are never populated by this mapper — see Business
+Outcomes below.
+
+`experimentId` is optional: a post belonging to a Kairos `Experiment` is
+linked by that id (never a fabricated one); ordinary, non-experimental
+content is stored exactly the same way with it absent. Content DNA is
+never duplicated onto a measurement — it stays on the `Experiment`, reached
+through `experimentId`. Multiple measurement times for the same post (30
+minutes, 2 hours, 24 hours, 72 hours, 7 days) all coexist: `PostMeasurement`
+is append-preserving by its own id, exactly like `ExperimentObservation`
+(Milestone 2) — deliberately not the same type, since `ExperimentObservation`
+still requires an `experimentId` and stays exactly as Milestone 2 left it;
+`PostMeasurement` is the general-purpose, profile-queryable counterpart this
+milestone needs.
+
+### Profile-level snapshots
+
+`ProfileMeasurementSnapshot` holds account-level analytics — followers,
+growth, daily aggregates — without forcing them into a fake post
+`Experiment`. `followersCount` is a point-in-time absolute count (what
+CreatorOS's `followerStats()` calls `currentFollowers`), kept separate from
+`metrics` because it is a snapshot fact, not a window/event metric like the
+rest of `PerformanceMetric`.
+
+### Business outcomes vs. platform analytics
+
+**CreatorOS tells Kairos what happened on the platform. First-party systems
+tell Kairos what happened in the business. Kairos stores both, preserves
+lineage, and analyzes them later.** `AttributionEvent` is that second,
+separate evidence source: `link_click`, `lead`, `checkout`, `purchase`,
+`refund`, `repeat_purchase`, `revenue`, `other`. Kairos never pretends a
+platform analytics response proves revenue — `mapCreatorOsPostAnalytics`
+structurally cannot produce `leads`/`sales`/`revenue`, and nothing in
+ingestion creates an `AttributionEvent` from a `PostMeasurement`. A high
+view count is attention evidence, not business evidence, until an actual
+attribution event says otherwise.
+
+### Tracking context and attribution uncertainty
+
+`TrackingContext` (`utmSource`/`utmMedium`/`utmCampaign`/`utmContent` plus
+`profileId`/`experimentId`/`offerId`) is plain data for the Platform →
+Profile → Experiment/Post → Offer → Conversion chain — no URL shortener, no
+checkout logic. Not every conversion can be perfectly tied to one post, so
+`AttributionMethod` (`direct` / `utm` / `last_touch` / `first_touch` /
+`manual` / `modelled` / `unknown`) represents that honestly instead of
+assuming `direct` by default — ingestion defaults an unspecified method to
+`unknown`, never `direct`. `modelled` exists as a vocabulary slot for a
+future milestone; no multi-touch modelling exists yet.
+
+### Audience-segment linkage
+
+`AttributionEvent.audienceSegmentId` is optional and never inferred without
+evidence — set only when a business event is actually known to belong to an
+`ObservedAudienceSegment` (Milestone 4). This is what eventually lets Kairos
+compare segments by business outcome as well as engagement: a segment with
+high replies but low purchases is a different segment from one with fewer
+replies but more purchases, and Kairos needs both signals to tell them
+apart.
+
+### Evidence source tagging
+
+Every measurement/attribution record carries `evidenceSource`
+(`creatoros_platform` / `first_party` / `manual` / `other`) — the field a
+future Science Engine needs to distinguish platform engagement evidence
+from business outcome evidence at a glance, without inspecting which store
+a record came from.
+
+### Raw-vs-normalized lineage
+
+Same discipline as every prior milestone's raw-evidence rule:
+`sourceSnapshotId` on `PostMeasurement`/`ProfileMeasurementSnapshot` points
+back at the `CreatorOsMeasurementSnapshot` it was normalized from.
+Normalizing never rewrites or discards the raw snapshot — no orphan
+normalized analytics exist while raw evidence is available to trace them to.
+
+### Baseline-input readiness (not baseline calculation)
+
+`PostMeasurement`/`ProfileMeasurementSnapshot`/`AttributionEvent` are all
+queryable by profile, by experiment (where linked) and by date range —
+content-format and objective queries reach through the linked `Experiment`
+rather than duplicating those fields onto every measurement. Nothing in
+Milestone 6 calculates a `PerformanceBaseline` — that stays Milestone 7's
+Science Engine work.
+
+### Deterministic ingestion, deterministic only
+
+`ingestMeasurementSnapshot` / `ingestProfileMeasurementSnapshot` /
+`ingestAttributionEvent` (`measurement/ingest.ts`) validate (profile
+existence, `creatorOsAccountId` consistency, experiment/profile
+consistency, non-negative counts, valid currency/timestamps, attribution
+value semantics, supported platforms — `measurement/validate.ts`),
+normalize, and persist through `IntelligenceStore`. No LLM, no inferred
+metrics, no statistical analysis, no automatic strategy change — this
+milestone stops at "here is what was observed," never "here is what it
+means."
+
+---
+
+## 19. Storage Architecture
 
 Kairos already has a storage port at `src/storage/store.ts` with a JSONL
 adapter (`src/storage/jsonlStore.ts`), designed so a Postgres adapter can
@@ -762,12 +911,14 @@ replace it without touching callers.
 
 Intelligence storage follows the **same discipline**, built in Milestone 2
 (`src/intelligence/storage/store.ts` + `jsonlIntelligenceStore.ts`) and
-extended by Milestone 4 (audience stores) and Milestone 5 (research stores):
+extended by Milestone 4 (audience stores), Milestone 5 (research stores) and
+Milestone 6 (measurement/attribution stores):
 
 - an intelligence port defined as an interface (`IntelligenceStore`),
 - JSONL-on-disk as the first adapter (append-only; mutable knowledge is
   latest-line-wins per `id`, raw evidence — `ExperimentObservation`,
-  `AudienceSignal`, `SegmentPerformance` — is never collapsed),
+  `AudienceSignal`, `SegmentPerformance`, `CreatorOsMeasurementSnapshot`,
+  `PostMeasurement`, `ProfileMeasurementSnapshot` — is never collapsed),
 - a durable adapter later, without changing callers.
 
 All intelligence domain types therefore carry a stable `id` (or, for
@@ -777,25 +928,26 @@ fields.
 
 **Milestone 1 shipped types only. Milestone 2 added the store. Milestone 3
 added the onboarding adapter. Milestone 4 added the audience stores.
-Milestone 5 added the research stores.**
+Milestone 5 added the research stores. Milestone 6 added the
+measurement/attribution stores.**
 
 ---
 
-## 19. Battle Engine (Future Module)
+## 20. Battle Engine (Future Module)
 
 The Battle Engine is the future component that turns the domain model into
 continuous competition: pairing variants, allocating posting capacity between
 exploitation and exploration according to `experimentMode`, promoting winners,
 retiring losers and scheduling revalidation of decaying findings.
 
-It is deliberately **out of scope** through Milestone 5. The domain model is
+It is deliberately **out of scope** through Milestone 6. The domain model is
 built so the Battle Engine can be added as a consumer — `pairId`, `variant`,
 `controlVariable`, `testVariables`, `experimentMode` and `currentAllocations`
 all exist for it — without any change to the types below it.
 
 ---
 
-## 20. Development Milestones
+## 21. Development Milestones
 
 | Milestone | Scope | Status |
 | --- | --- | --- |
@@ -803,9 +955,9 @@ all exist for it — without any change to the types below it.
 | 2 — Intelligence Storage | Intelligence store port + JSONL adapter | Done |
 | 3 — Profile Onboarding Mapping | Adapter from onboarding answers → `SocialProfile` + `ProfileBrain` init | Done |
 | 4 — Audience Brain | Audience signals, observed segments, segment findings, segment performance, declared-vs-observed comparison | Done |
-| **5 — Strategy & Research Intelligence** | Research sources, strategy claims, observed associations, causal status, provenance, `StrategyPrinciple` evidence links | **This milestone** |
-| 6 — Measurement Ingestion | CreatorOS analytics → `ExperimentResult`, baseline calculation | Planned |
-| 7 — Science Engine | Hypothesis lifecycle, finding emission, decay, pattern detection, audience classification, claim → hypothesis mapping | Planned |
+| 5 — Strategy & Research Intelligence | Research sources, strategy claims, observed associations, causal status, provenance, `StrategyPrinciple` evidence links | Done |
+| **6 — Measurement Ingestion & Attribution** | Raw CreatorOS snapshots, normalized post/profile observations, first-party attribution events, tracking context, raw/normalized lineage | **This milestone** |
+| 7 — Science Engine | Baseline calculation, hypothesis lifecycle, finding emission, decay, pattern detection, audience classification, claim → hypothesis mapping | Planned |
 | 8 — Battle Engine | Variant allocation, winner promotion, revalidation scheduling | Planned |
 | 9 — Social Genome | Commercial dashboard/product surface | Planned |
 
@@ -813,7 +965,7 @@ Each milestone is additive and must leave CreatorOS execution untouched.
 
 ---
 
-## 21. Non-Goals
+## 22. Non-Goals
 
 Explicitly **not** part of Kairos Intelligence, now or later:
 
@@ -824,12 +976,15 @@ Explicitly **not** part of Kairos Intelligence, now or later:
 - A parallel platform abstraction that diverges from the CreatorOS platform
   matrix.
 - Ecommerce/payment integration (offers are descriptive only through
-  Milestone 5).
+  Milestone 6; `AttributionEvent` records outcomes, it does not process
+  payments).
 - Individual psychological dossiers or sensitive-trait inference of any kind
   (race/ethnicity, religion, sexual orientation, medical conditions,
   political affiliation, criminal history) — see §16's privacy boundary.
 - Treating outside knowledge (any `StrategyClaim`) as automatically
   validated — see §17's core rule.
+- Treating a CreatorOS platform analytics response as proof of revenue —
+  see §18's business-outcomes rule.
 
 Explicitly **not** part of Milestone 4:
 
@@ -851,9 +1006,23 @@ Explicitly **not** part of Milestone 5:
 - Any modification to CreatorOS's skill-delivery system — Kairos consumes
   skills as a research input, never replaces how they are shipped.
 
-Explicitly **not** part of either milestone:
+Explicitly **not** part of Milestone 6:
 
-- The Science Engine, Adaptive Strategy, the Battle Engine.
+- Baseline calculation — `PostMeasurement`/`ProfileMeasurementSnapshot` are
+  built to be query-ready for it, but nothing computes one yet.
+- Any Science Engine decision about what worked, or any automatic strategy
+  change from ingested data.
+- Multi-touch attribution modelling — `AttributionMethod` represents
+  uncertainty honestly; it does not resolve it.
+- Any ecommerce/payment-provider integration (e.g. WooCommerce) — the
+  `AttributionEvent` foundation exists for one to plug into later.
+- A URL shortener or checkout logic — `TrackingContext` is data only.
+- Any modification to CreatorOS's analytics retrieval, posting, or account
+  contracts.
+
+Explicitly **not** part of any milestone so far:
+
+- The Science Engine, Adaptive Strategy, the Battle Engine, Social Genome.
 - Onboarding changes, dashboard changes, CreatorOS execution changes.
 
 ---

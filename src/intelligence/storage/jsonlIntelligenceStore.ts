@@ -25,13 +25,23 @@ import type {
 } from '../audience/types.js';
 import type { ResearchSource, StrategyClaim } from '../research/types.js';
 import type {
+  AttributionEvent,
+  CreatorOsMeasurementSnapshot,
+  PostMeasurement,
+  ProfileMeasurementSnapshot,
+} from '../measurement/types.js';
+import type {
+  AttributionEventQuery,
   AudienceSignalQuery,
   BaselineQuery,
   ExperimentQuery,
   FindingQuery,
   HypothesisQuery,
   IntelligenceStore,
+  MeasurementSnapshotQuery,
   ObservedSegmentQuery,
+  PostMeasurementQuery,
+  ProfileMeasurementQuery,
   ProfileQuery,
   ResearchSourceQuery,
   SegmentFindingQuery,
@@ -97,6 +107,22 @@ export function researchSourcesPath(workspaceRoot: string): string {
 
 export function strategyClaimsPath(workspaceRoot: string): string {
   return join(intelligenceDir(workspaceRoot), 'strategy-claims.jsonl');
+}
+
+export function measurementSnapshotsPath(workspaceRoot: string): string {
+  return join(intelligenceDir(workspaceRoot), 'measurement-snapshots.jsonl');
+}
+
+export function postMeasurementsPath(workspaceRoot: string): string {
+  return join(intelligenceDir(workspaceRoot), 'post-measurements.jsonl');
+}
+
+export function profileMeasurementSnapshotsPath(workspaceRoot: string): string {
+  return join(intelligenceDir(workspaceRoot), 'profile-measurement-snapshots.jsonl');
+}
+
+export function attributionEventsPath(workspaceRoot: string): string {
+  return join(intelligenceDir(workspaceRoot), 'attribution-events.jsonl');
 }
 
 async function appendLine(path: string, entry: unknown): Promise<void> {
@@ -410,5 +436,83 @@ export class JsonlIntelligenceStore implements IntelligenceStore {
     if (query.objective) claims = claims.filter((c) => c.objectives?.includes(query.objective!));
     claims.sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1));
     return claims.slice(0, query.limit ?? 100);
+  }
+
+  async saveMeasurementSnapshot(snapshot: CreatorOsMeasurementSnapshot): Promise<void> {
+    await appendLine(measurementSnapshotsPath(this.workspaceRoot), snapshot);
+  }
+
+  async getMeasurementSnapshot(id: string): Promise<CreatorOsMeasurementSnapshot | null> {
+    const all = await readLatestByKey<CreatorOsMeasurementSnapshot>(measurementSnapshotsPath(this.workspaceRoot), (s) => s.id);
+    return all.find((s) => s.id === id) ?? null;
+  }
+
+  async listMeasurementSnapshots(query: MeasurementSnapshotQuery): Promise<CreatorOsMeasurementSnapshot[]> {
+    let snapshots = await readLatestByKey<CreatorOsMeasurementSnapshot>(measurementSnapshotsPath(this.workspaceRoot), (s) => s.id);
+    snapshots = snapshots.filter((s) => s.profileId === query.profileId);
+    if (query.creatorOsPostId) snapshots = snapshots.filter((s) => s.creatorOsPostId === query.creatorOsPostId);
+    if (query.experimentId) snapshots = snapshots.filter((s) => s.experimentId === query.experimentId);
+    if (query.from) snapshots = snapshots.filter((s) => s.capturedAt >= query.from!);
+    if (query.to) snapshots = snapshots.filter((s) => s.capturedAt <= query.to!);
+    snapshots.sort((a, b) => (a.capturedAt < b.capturedAt ? -1 : 1));
+    return snapshots.slice(0, query.limit ?? 500);
+  }
+
+  async savePostMeasurement(measurement: PostMeasurement): Promise<void> {
+    await appendLine(postMeasurementsPath(this.workspaceRoot), measurement);
+  }
+
+  async getPostMeasurement(id: string): Promise<PostMeasurement | null> {
+    const all = await readLatestByKey<PostMeasurement>(postMeasurementsPath(this.workspaceRoot), (m) => m.id);
+    return all.find((m) => m.id === id) ?? null;
+  }
+
+  async listPostMeasurements(query: PostMeasurementQuery): Promise<PostMeasurement[]> {
+    let measurements = await readLatestByKey<PostMeasurement>(postMeasurementsPath(this.workspaceRoot), (m) => m.id);
+    measurements = measurements.filter((m) => m.profileId === query.profileId);
+    if (query.experimentId) measurements = measurements.filter((m) => m.experimentId === query.experimentId);
+    if (query.creatorOsPostId) measurements = measurements.filter((m) => m.creatorOsPostId === query.creatorOsPostId);
+    if (query.from) measurements = measurements.filter((m) => m.measuredAt >= query.from!);
+    if (query.to) measurements = measurements.filter((m) => m.measuredAt <= query.to!);
+    measurements.sort((a, b) => (a.measuredAt < b.measuredAt ? -1 : 1));
+    return measurements.slice(0, query.limit ?? 500);
+  }
+
+  async saveProfileMeasurementSnapshot(snapshot: ProfileMeasurementSnapshot): Promise<void> {
+    await appendLine(profileMeasurementSnapshotsPath(this.workspaceRoot), snapshot);
+  }
+
+  async listProfileMeasurementSnapshots(query: ProfileMeasurementQuery): Promise<ProfileMeasurementSnapshot[]> {
+    let snapshots = await readLatestByKey<ProfileMeasurementSnapshot>(
+      profileMeasurementSnapshotsPath(this.workspaceRoot),
+      (s) => s.id,
+    );
+    snapshots = snapshots.filter((s) => s.profileId === query.profileId);
+    if (query.from) snapshots = snapshots.filter((s) => s.capturedAt >= query.from!);
+    if (query.to) snapshots = snapshots.filter((s) => s.capturedAt <= query.to!);
+    snapshots.sort((a, b) => (a.capturedAt < b.capturedAt ? -1 : 1));
+    return snapshots.slice(0, query.limit ?? 500);
+  }
+
+  async saveAttributionEvent(event: AttributionEvent): Promise<void> {
+    await appendLine(attributionEventsPath(this.workspaceRoot), event);
+  }
+
+  async getAttributionEvent(id: string): Promise<AttributionEvent | null> {
+    const all = await readLatestByKey<AttributionEvent>(attributionEventsPath(this.workspaceRoot), (e) => e.id);
+    return all.find((e) => e.id === id) ?? null;
+  }
+
+  async listAttributionEvents(query: AttributionEventQuery): Promise<AttributionEvent[]> {
+    let events = await readLatestByKey<AttributionEvent>(attributionEventsPath(this.workspaceRoot), (e) => e.id);
+    events = events.filter((e) => e.profileId === query.profileId);
+    if (query.experimentId) events = events.filter((e) => e.experimentId === query.experimentId);
+    if (query.creatorOsPostId) events = events.filter((e) => e.creatorOsPostId === query.creatorOsPostId);
+    if (query.offerId) events = events.filter((e) => e.offerId === query.offerId);
+    if (query.eventType) events = events.filter((e) => e.eventType === query.eventType);
+    if (query.from) events = events.filter((e) => e.occurredAt >= query.from!);
+    if (query.to) events = events.filter((e) => e.occurredAt <= query.to!);
+    events.sort((a, b) => (a.occurredAt < b.occurredAt ? -1 : 1));
+    return events.slice(0, query.limit ?? 500);
   }
 }

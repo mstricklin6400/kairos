@@ -73,6 +73,24 @@
  * - Outside knowledge (any `StrategyClaim`) never becomes a `Finding`
  *   automatically — nothing in this store writes to the Findings store.
  *
+ * SOURCE-OF-TRUTH RULES — Measurement Ingestion & Attribution (Milestone 6)
+ * ------------------------------------------------------------------------
+ * - `CreatorOsMeasurementSnapshot` is raw evidence: keyed by its own `id`
+ *   (deterministically derived from `(creatorOsPostId, capturedAt)` when
+ *   both are known, so repeated ingestion of the same pull is idempotent —
+ *   see `measurement/ingest.ts`), never overwritten by a later pull. Exactly
+ *   what CreatorOS returned, preserved as-is.
+ * - `PostMeasurement` / `ProfileMeasurementSnapshot` are the normalized
+ *   readings mapped out of that evidence — same append-preserving
+ *   discipline, `sourceSnapshotId` traces back to the raw snapshot.
+ *   Normalizing never rewrites or discards the raw snapshot it came from.
+ * - `AttributionEvent` is a separate, first-party evidence source — never
+ *   derived from CreatorOS platform analytics. A platform analytics
+ *   response is never treated as proof of revenue; only an actual
+ *   `AttributionEvent` is.
+ * - None of the above ever triggers a `Finding`, a baseline calculation, or
+ *   a strategy change — that is Science Engine work for a later milestone.
+ *
  * No layer in this list silently overwrites another.
  */
 import type { GrowthObjective, IsoDateTime, KnowledgeScopeLevel, Platform } from '../common/types.js';
@@ -112,6 +130,13 @@ import type {
   ResearchSourceType,
   StrategyClaim,
 } from '../research/types.js';
+import type {
+  AttributionEvent,
+  AttributionEventType,
+  CreatorOsMeasurementSnapshot,
+  PostMeasurement,
+  ProfileMeasurementSnapshot,
+} from '../measurement/types.js';
 
 export interface ProfileQuery {
   readonly platform?: Platform;
@@ -194,6 +219,46 @@ export interface StrategyClaimQuery {
   readonly limit?: number;
 }
 
+export interface MeasurementSnapshotQuery {
+  readonly profileId: string;
+  readonly creatorOsPostId?: string;
+  readonly experimentId?: string;
+  /** Inclusive `capturedAt` range. */
+  readonly from?: IsoDateTime;
+  readonly to?: IsoDateTime;
+  readonly limit?: number;
+}
+
+export interface PostMeasurementQuery {
+  readonly profileId: string;
+  readonly experimentId?: string;
+  readonly creatorOsPostId?: string;
+  /** Inclusive `measuredAt` range. */
+  readonly from?: IsoDateTime;
+  readonly to?: IsoDateTime;
+  readonly limit?: number;
+}
+
+export interface ProfileMeasurementQuery {
+  readonly profileId: string;
+  /** Inclusive `capturedAt` range. */
+  readonly from?: IsoDateTime;
+  readonly to?: IsoDateTime;
+  readonly limit?: number;
+}
+
+export interface AttributionEventQuery {
+  readonly profileId: string;
+  readonly experimentId?: string;
+  readonly creatorOsPostId?: string;
+  readonly offerId?: string;
+  readonly eventType?: AttributionEventType;
+  /** Inclusive `occurredAt` range. */
+  readonly from?: IsoDateTime;
+  readonly to?: IsoDateTime;
+  readonly limit?: number;
+}
+
 export interface IntelligenceStore {
   /** Upsert by id. */
   saveProfile(profile: SocialProfile): Promise<void>;
@@ -272,4 +337,23 @@ export interface IntelligenceStore {
   saveStrategyClaim(claim: StrategyClaim): Promise<void>;
   getStrategyClaim(id: string): Promise<StrategyClaim | null>;
   listStrategyClaims(query?: StrategyClaimQuery): Promise<StrategyClaim[]>;
+
+  /** Raw evidence. Keyed by a deterministic id when derivable, so repeated ingestion of the same pull is idempotent rather than duplicated. */
+  saveMeasurementSnapshot(snapshot: CreatorOsMeasurementSnapshot): Promise<void>;
+  getMeasurementSnapshot(id: string): Promise<CreatorOsMeasurementSnapshot | null>;
+  listMeasurementSnapshots(query: MeasurementSnapshotQuery): Promise<CreatorOsMeasurementSnapshot[]>;
+
+  /** Normalized readings. Append-preserving by id — a later measurement never overwrites an earlier one. */
+  savePostMeasurement(measurement: PostMeasurement): Promise<void>;
+  getPostMeasurement(id: string): Promise<PostMeasurement | null>;
+  listPostMeasurements(query: PostMeasurementQuery): Promise<PostMeasurement[]>;
+
+  /** Append-preserving by id — never forced into a fake post Experiment. */
+  saveProfileMeasurementSnapshot(snapshot: ProfileMeasurementSnapshot): Promise<void>;
+  listProfileMeasurementSnapshots(query: ProfileMeasurementQuery): Promise<ProfileMeasurementSnapshot[]>;
+
+  /** First-party evidence, never derived from platform analytics. Upsert by id — a caller-supplied stable id (e.g. a payment-provider event id) makes re-ingestion idempotent. */
+  saveAttributionEvent(event: AttributionEvent): Promise<void>;
+  getAttributionEvent(id: string): Promise<AttributionEvent | null>;
+  listAttributionEvents(query: AttributionEventQuery): Promise<AttributionEvent[]>;
 }

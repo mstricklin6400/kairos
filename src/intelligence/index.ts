@@ -11,10 +11,11 @@
  *
  * Import order below follows the dependency order of the modules
  * (common -> profiles -> performance -> science -> audience -> research ->
- * strategy, since `strategy/types.ts`'s `AudienceIntelligence` references
- * `audience/types.ts`'s `DeclaredAudienceComparison`, and its
+ * measurement -> strategy, since `strategy/types.ts`'s `AudienceIntelligence`
+ * references `audience/types.ts`'s `DeclaredAudienceComparison`, its
  * `StrategyPrinciple` references claim ids conceptually owned by
- * `research/types.ts`); there are no cycles.
+ * `research/types.ts`, and `measurement/types.ts` reuses `ExperimentResult`
+ * from `science/types.ts`); there are no cycles.
  */
 
 export type {
@@ -105,6 +106,17 @@ export type {
   SourceLocator,
   StrategyClaim,
 } from './research/types.js';
+
+export type {
+  AttributionEvent,
+  AttributionEventType,
+  AttributionMethod,
+  CreatorOsMeasurementSnapshot,
+  EvidenceSource,
+  PostMeasurement,
+  ProfileMeasurementSnapshot,
+  TrackingContext,
+} from './measurement/types.js';
 
 export type {
   AudienceIntelligence,
