@@ -216,27 +216,45 @@ undifferentiated event; with it, a post is a data point with features.
 
 ## 8. Measurement Hierarchy
 
-Metrics are grouped into tiers that ascend from cheap-and-noisy to
-expensive-and-meaningful:
+Metrics are grouped into tiers that classify *what kind of signal* they are,
+from cheap-and-noisy to durable and commercial:
 
 | Tier | Meaning | Example metrics |
 | --- | --- | --- |
 | **Attention** | Did anyone see it? | impressions, views |
 | **Conversation** | Did anyone respond? | replies, comments |
-| **Amplification** | Did anyone spread it? | reposts, shares, likes |
-| **Growth** | Did the account grow? | followers gained |
-| **Intent** | Did anyone want more? | profile visits, saves, bookmarks |
-| **Conversion** | Did anyone act? | clicks, leads |
-| **Customer Value** | Did it produce money? | sales, revenue |
+| **Amplification** | Did anyone spread it? | reposts, shares |
+| **Engagement Signal** | Did anyone show light interest? | likes, saves, bookmarks |
+| **Growth** | Did the account grow? | profile visits, followers gained |
+| **Intent** | Did anyone want more? | clicks, DMs/inquiries (where measurable), product-page visits (where measurable) |
+| **Conversion** | Did anyone act? | leads, sales/purchases |
+| **Customer Value** | Did it produce durable value? | revenue, repeat purchases, retention, lifetime value |
 
-A finding supported only at the Attention tier is weaker than one supported at
-the Conversion tier, even with the same p-value. Kairos should always prefer
-the highest tier the profile's objective actually cares about.
+**Tier is not a ranking of evidentiary strength.** A metric is not "stronger
+evidence" simply because it sits deeper in this table. Evidence quality
+depends on whether the measured outcome matches:
+
+- the hypothesis,
+- the dependent variable,
+- the profile's objective.
+
+If the hypothesis is *"Question hooks increase replies,"* reply data is
+directly relevant evidence. Sales data is not automatically stronger evidence
+for that question — it answers a different one. If the hypothesis is
+*"Question hooks increase purchases,"* replies alone are insufficient; that
+claim needs purchase data. Business-depth metrics answer different questions
+than attention-tier metrics; they are not automatically scientifically
+superior to them.
+
+Deeper-funnel metrics such as `lifetimeValue`, where they exist, are
+attributed/modelled values, not something an ordinary CreatorOS post-analytics
+pull can populate on its own — they require a later attribution model.
 
 **Not every platform exposes every metric.** Every field on `ExperimentResult`
-is therefore optional, and `impressions` and `views` are kept as *separate*
-fields — collapsing them would destroy the record of what was actually
-returned.
+is therefore optional, and platform-native metrics that mean different things
+are kept as *separate* fields — `impressions` vs. `views`, `replies` vs.
+`comments`, `reposts` vs. `shares`, `saves` vs. `bookmarks` — collapsing any
+of these pairs would destroy the record of what was actually returned.
 
 ---
 

@@ -404,10 +404,29 @@ describe('measurement hierarchy', () => {
     expect(METRIC_MEASUREMENT_TIER.impressions).toBe('attention');
     expect(METRIC_MEASUREMENT_TIER.views).toBe('attention');
     expect(METRIC_MEASUREMENT_TIER.replies).toBe('conversation');
+    expect(METRIC_MEASUREMENT_TIER.comments).toBe('conversation');
+    expect(METRIC_MEASUREMENT_TIER.reposts).toBe('amplification');
     expect(METRIC_MEASUREMENT_TIER.shares).toBe('amplification');
+    expect(METRIC_MEASUREMENT_TIER.likes).toBe('engagementSignal');
+    expect(METRIC_MEASUREMENT_TIER.saves).toBe('engagementSignal');
+    expect(METRIC_MEASUREMENT_TIER.bookmarks).toBe('engagementSignal');
+    expect(METRIC_MEASUREMENT_TIER.profileVisits).toBe('growth');
     expect(METRIC_MEASUREMENT_TIER.followersGained).toBe('growth');
-    expect(METRIC_MEASUREMENT_TIER.saves).toBe('intent');
+    expect(METRIC_MEASUREMENT_TIER.clicks).toBe('intent');
     expect(METRIC_MEASUREMENT_TIER.leads).toBe('conversion');
+    expect(METRIC_MEASUREMENT_TIER.sales).toBe('conversion');
     expect(METRIC_MEASUREMENT_TIER.revenue).toBe('customerValue');
+  });
+
+  it('keeps platform-native metric pairs distinct rather than collapsing them', () => {
+    // impressions != views, replies != comments, reposts != shares, saves != bookmarks
+    expect(METRIC_MEASUREMENT_TIER.impressions).toBe(METRIC_MEASUREMENT_TIER.views);
+    expect(METRIC_MEASUREMENT_TIER.replies).toBe(METRIC_MEASUREMENT_TIER.comments);
+    expect(METRIC_MEASUREMENT_TIER.reposts).toBe(METRIC_MEASUREMENT_TIER.shares);
+    expect(METRIC_MEASUREMENT_TIER.saves).toBe(METRIC_MEASUREMENT_TIER.bookmarks);
+    // Same tier does not mean same field — each metric still round-trips independently.
+    const result: ExperimentResult = { impressions: 100, views: 50, saves: 4, bookmarks: 9 };
+    expect(result.impressions).not.toBe(result.views);
+    expect(result.saves).not.toBe(result.bookmarks);
   });
 });

@@ -17,7 +17,18 @@ import type {
  *
  * `impressions` and `views` are separate on purpose: platforms mean different
  * things by them, and collapsing the two would destroy the record of which one
- * was actually returned.
+ * was actually returned. The same logic keeps `replies` distinct from
+ * `comments`, `reposts` distinct from `shares`, and `saves` distinct from
+ * `bookmarks`.
+ *
+ * Evidence quality rule: a metric is not "stronger evidence" because it sits
+ * deeper in the funnel. It is stronger evidence for a *given hypothesis* only
+ * when it matches that hypothesis's dependent variable and the profile's
+ * objective. "Question hooks increase replies" is well-supported by reply
+ * data; sales data is not automatically stronger evidence for that claim —
+ * it answers a different question. "Question hooks increase purchases" needs
+ * purchase data; replies alone cannot support it. See `MeasurementTier` for
+ * the classification this vocabulary ladders into.
  */
 export type PerformanceMetric =
   | 'impressions'
@@ -37,14 +48,16 @@ export type PerformanceMetric =
   | 'revenue';
 
 /**
- * The measurement hierarchy, ascending from cheap-and-noisy to
- * expensive-and-meaningful. A finding supported only at `attention` is weaker
- * than one supported at `conversion`, whatever the statistics say.
+ * The measurement hierarchy — a classification of what each metric tells you,
+ * not a ranking of evidentiary strength. Deeper-funnel tiers are not
+ * inherently stronger evidence than shallower ones; see the note on
+ * `PerformanceMetric` for the rule that actually governs evidence quality.
  */
 export type MeasurementTier =
   | 'attention'
   | 'conversation'
   | 'amplification'
+  | 'engagementSignal'
   | 'growth'
   | 'intent'
   | 'conversion'
@@ -56,16 +69,16 @@ export const METRIC_MEASUREMENT_TIER: Readonly<Record<PerformanceMetric, Measure
   views: 'attention',
   replies: 'conversation',
   comments: 'conversation',
-  likes: 'amplification',
   reposts: 'amplification',
   shares: 'amplification',
+  likes: 'engagementSignal',
+  saves: 'engagementSignal',
+  bookmarks: 'engagementSignal',
+  profileVisits: 'growth',
   followersGained: 'growth',
-  profileVisits: 'intent',
-  saves: 'intent',
-  bookmarks: 'intent',
-  clicks: 'conversion',
+  clicks: 'intent',
   leads: 'conversion',
-  sales: 'customerValue',
+  sales: 'conversion',
   revenue: 'customerValue',
 };
 
