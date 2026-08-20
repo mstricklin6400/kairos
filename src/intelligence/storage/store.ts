@@ -73,6 +73,17 @@
  * - Outside knowledge (any `StrategyClaim`) never becomes a `Finding`
  *   automatically — nothing in this store writes to the Findings store.
  *
+ * SOURCE-OF-TRUTH RULES — Social Prescription (Milestone 11)
+ * ------------------------------------------------------------------------
+ * - `SocialPrescription` is a versioned snapshot, upserted by id and never
+ *   erased. A new prescription carries `supersedesPrescriptionId` plus a
+ *   diff of evidence and recommendations added/removed, so the reasoning
+ *   behind a superseded package survives it being replaced.
+ * - A prescription CITES evidence; it never becomes evidence. Nothing in
+ *   the prescription module writes to the Findings store, and every
+ *   recommendation carries the `EvidenceClass` that earned it rather than a
+ *   blended certainty score.
+ *
  * SOURCE-OF-TRUTH RULES — Intelligence Transfer (Milestone 10)
  * ------------------------------------------------------------------------
  * - `TransferAssessment` is an auditable judgment, upserted by id and
@@ -230,6 +241,7 @@ import type {
   BattleSeasonStatus,
 } from '../battle/types.js';
 import type { PeerCohort, TransferAssessment, TransferRelevance } from '../transfer/types.js';
+import type { SocialPrescription } from '../prescription/types.js';
 
 export interface ProfileQuery {
   readonly platform?: Platform;
@@ -396,6 +408,11 @@ export interface TransferAssessmentQuery {
   readonly targetProfileId: string;
   readonly relevance?: TransferRelevance;
   readonly findingId?: string;
+  readonly limit?: number;
+}
+
+export interface SocialPrescriptionQuery {
+  readonly profileId: string;
   readonly limit?: number;
 }
 
@@ -574,4 +591,11 @@ export interface IntelligenceStore {
   savePeerCohort(cohort: PeerCohort): Promise<void>;
   getPeerCohort(id: string): Promise<PeerCohort | null>;
   listPeerCohorts(): Promise<PeerCohort[]>;
+
+  // ---- Social Prescription (Milestone 11) ----
+
+  /** Versioned snapshots; superseded prescriptions are retained, never erased. */
+  saveSocialPrescription(prescription: SocialPrescription): Promise<void>;
+  getSocialPrescription(id: string): Promise<SocialPrescription | null>;
+  listSocialPrescriptions(query: SocialPrescriptionQuery): Promise<SocialPrescription[]>;
 }

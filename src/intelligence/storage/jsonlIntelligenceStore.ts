@@ -48,6 +48,7 @@ import type {
   BattleSeason,
 } from '../battle/types.js';
 import type { PeerCohort, TransferAssessment } from '../transfer/types.js';
+import type { SocialPrescription } from '../prescription/types.js';
 import type {
   AdaptiveStrategyPlanQuery,
   AttributionEventQuery,
@@ -57,6 +58,7 @@ import type {
   HypothesisEvidenceQuery,
   StrategyRecommendationQuery,
   TransferAssessmentQuery,
+  SocialPrescriptionQuery,
   AudienceSignalQuery,
   BaselineQuery,
   ExperimentQuery,
@@ -177,6 +179,10 @@ export function transferAssessmentsPath(workspaceRoot: string): string {
 
 export function peerCohortsPath(workspaceRoot: string): string {
   return join(intelligenceDir(workspaceRoot), 'peer-cohorts.jsonl');
+}
+
+export function socialPrescriptionsPath(workspaceRoot: string): string {
+  return join(intelligenceDir(workspaceRoot), 'social-prescriptions.jsonl');
 }
 
 async function appendLine(path: string, entry: unknown): Promise<void> {
@@ -824,5 +830,25 @@ export class JsonlIntelligenceStore implements IntelligenceStore {
 
   async listPeerCohorts(): Promise<PeerCohort[]> {
     return readLatestByKey<PeerCohort>(peerCohortsPath(this.workspaceRoot), (c) => c.id);
+  }
+
+  // ---- Social Prescription -----------------------------------------------
+
+  async saveSocialPrescription(prescription: SocialPrescription): Promise<void> {
+    await appendLine(socialPrescriptionsPath(this.workspaceRoot), prescription);
+  }
+
+  async getSocialPrescription(id: string): Promise<SocialPrescription | null> {
+    const all = await readLatestByKey<SocialPrescription>(socialPrescriptionsPath(this.workspaceRoot), (p) => p.id);
+    return all.find((p) => p.id === id) ?? null;
+  }
+
+  async listSocialPrescriptions(query: SocialPrescriptionQuery): Promise<SocialPrescription[]> {
+    const all = await readLatestByKey<SocialPrescription>(socialPrescriptionsPath(this.workspaceRoot), (p) => p.id);
+    return all
+      .filter((p) => p.profileId === query.profileId)
+      // Newest version first; every earlier version is retained.
+      .sort((a, b) => b.versionInfo.version - a.versionInfo.version)
+      .slice(0, query.limit ?? 100);
   }
 }

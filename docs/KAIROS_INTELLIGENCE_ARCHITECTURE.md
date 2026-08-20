@@ -1331,7 +1331,8 @@ Milestone 5 added the research stores. Milestone 6 added the
 measurement/attribution stores. Milestone 7 added the hypothesis-evidence
 store. Milestone 8 added the recommendation and strategy-plan stores.
 Milestone 9 added the battle stores. Milestone 10 added the
-transfer-assessment and peer-cohort stores.**
+transfer-assessment and peer-cohort stores. Milestone 11 added the
+social-prescription store.**
 
 ---
 
@@ -1723,7 +1724,97 @@ never people**.
 
 ---
 
-## 24. Development Milestones
+## 24. Social Prescription Engine
+
+Milestone 11. Turns Kairos intelligence into a curated, evidence-backed
+strategy package for ONE profile — where the commercial promise lands:
+
+> "Don't give me generic social advice. Tell me what I should do, for my
+> business, audience, niche, platform and objective — and tell me why."
+
+A prescription **cites** evidence; it never becomes evidence. Nothing in the
+module writes a `Finding`, and it invents no strategy of its own: every
+section is assembled from Science, Adaptive Strategy, Transfer, Audience,
+Research and Measurement output.
+
+### The nine outputs
+
+**WHO** priority audience and segments · **WHAT** pillars, topics, formats ·
+**HOW** hook patterns and CTAs · **WHERE** platform guidance · **WHEN**
+cadence · **WHY** evidence behind each recommendation · **WHAT NOT TO DO**
+rejected and contraindicated approaches · **WHAT TO TEST** open hypotheses ·
+**WHAT WE DON'T KNOW** explicit unknowns.
+
+### Evidence classes never collapse
+
+`validated_on_profile` · `promising_on_profile` · `comparable_profiles` ·
+`research_informed` · `experimental` · `unknown`
+
+"Validated on your profile" and "supported by comparable profiles" are
+different claims and stay different. **There is no blended certainty score
+anywhere in the model** — every recommendation displays the class that
+earned it, and transferred evidence can never be presented as first-party
+validation.
+
+### Pattern vs. example execution
+
+This distinction is enforced by the type system, not by convention.
+
+- *"Question-led problem hooks perform well"* is a **pattern**. It carries an
+  `EvidenceClass`, a sample and a confidence.
+- *"Are you making this credit mistake?"* is an **example execution**.
+  `PrescriptionExample` has **no** `evidenceClass`, **no** `confidence` and
+  **no** sample — it is structurally incapable of carrying evidence, and
+  every example states in its own `note` that the wording is not itself
+  evidence.
+
+Claiming a specific sentence is scientifically proven is the error this
+separation exists to make impossible.
+
+### Objective depth — money over vanity
+
+Recommendations are ranked against the profile's actual objective using a
+funnel-depth ladder (attention → engagement → intent → conversion →
+customer value). With `enforceObjectiveDepth`, evidence that does not reach
+the objective's depth is **deprioritized rather than led with**: a
+reply-rate win is real evidence, but it does not answer a revenue question,
+and a revenue prescription will not open with it.
+
+Depth is used **only** for objective matching. §8's rule stands unchanged: a
+deeper metric is not better evidence, it is evidence about a different
+question.
+
+An approach that repeatedly fails to advance the objective accumulates a
+compounding penalty, drawn from the profile's own rejected findings.
+
+### Honest gaps
+
+Where evidence does not exist, the prescription says so rather than filling
+the space. Cadence guidance that merely restates declared capacity is
+flagged `fromStatedCapacityOnly: true` with `evidenceClass: 'unknown'`, and
+raises a matching entry under "What we don't know". A profile with no
+observed segments is told its declared audience remains unconfirmed.
+
+### Versioning
+
+`PrescriptionVersion` records version, `generatedAt`, `evidenceCutoff`,
+`supersedesPrescriptionId`, an optional change reason, and diffs of evidence
+and recommendations added/removed. **Historical prescriptions are never
+erased** — the reasoning behind a superseded package survives it being
+replaced.
+
+Recommendations resting on stale evidence are flagged `needsRevalidation`
+and listed under `revalidationNeeded`, so a decaying prescription is never
+presented indefinitely as current truth.
+
+### Delivery
+
+Machine-readable domain output only. No customer dashboard, no publishing,
+no content generation — CreatorOS remains the execution layer.
+
+---
+
+## 25. Development Milestones
 
 | Milestone | Scope | Status |
 | --- | --- | --- |
@@ -1736,15 +1827,15 @@ never people**.
 | 7 — Science Engine | Baselines, comparisons, objective-metric policy, paired analysis, hypothesis evidence & evaluation, operational confidence, finding emission, decay/revalidation, science reports | Done |
 | 8 — Adaptive Strategy Engine | Next-best-action recommendations, exploration/exploitation policy, constraints, content allocation, failure memory, information gain, strategy plans & versioning | Done |
 | 9 — Battle Engine | Seasons, protocols, competitors, divisions, matchups, pre-registration, lab/growth modes, configurable scoring with vanity guard, standings, predictions, milestones, evidence provenance | Done |
-| **10 — Intelligence Transfer** | Explainable comparability across 17 dimensions, evidence hierarchy, negative transfer, cold start, hypothesis seeding | **This milestone** |
-| 11 — Social Prescription | Evidence-backed, profile-specific strategy packages | Planned |
+| 10 — Intelligence Transfer | Explainable comparability across 17 dimensions, evidence hierarchy, negative transfer, cold start, hypothesis seeding | Done |
+| **11 — Social Prescription** | Nine-section evidence-backed strategy packages, non-collapsing evidence classes, pattern-vs-example separation, objective depth, versioning | **This milestone** |
 | 12 — Social Genome | Conditional evidence map across profile × platform × niche × audience × objective × content | Planned |
 
 Each milestone is additive and must leave CreatorOS execution untouched.
 
 ---
 
-## 25. Non-Goals
+## 26. Non-Goals
 
 Explicitly **not** part of Kairos Intelligence, now or later:
 
@@ -1861,9 +1952,19 @@ Explicitly **not** part of Milestone 10:
 - Rewriting Adaptive Strategy; the integration point is
   `TransferAssessment` feeding future experiment prioritization.
 
+Explicitly **not** part of Milestone 11:
+
+- Any LLM call or content generation. Hook *patterns* come from evidence;
+  example executions are caller-supplied illustrations that cannot carry
+  evidence.
+- Presenting a specific sentence as scientifically supported.
+- Collapsing evidence classes into one certainty score.
+- Writing a `Finding`, or letting a prescription become evidence.
+- Any customer dashboard, delivery surface or publishing.
+
 Explicitly **not** part of any milestone so far:
 
-- Social Prescription, Social Genome.
+- Social Genome.
 - Onboarding changes, dashboard changes, CreatorOS execution changes.
 
 ---

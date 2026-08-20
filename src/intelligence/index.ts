@@ -205,6 +205,29 @@ export type {
 export { DEFAULT_TRANSFER_POLICY } from './transfer/types.js';
 
 export type {
+  AudiencePrescription,
+  CadencePrescription,
+  ContentPrescription,
+  CtaPrescription,
+  EvidenceClass,
+  HookPrescription,
+  OfferPrescription,
+  PlatformPrescription,
+  PrescriptionEvidence,
+  PrescriptionExample,
+  PrescriptionExperiment,
+  PrescriptionPolicy,
+  PrescriptionRecommendation,
+  PrescriptionSection,
+  PrescriptionSectionKey,
+  PrescriptionUnknown,
+  PrescriptionVersion,
+  SocialPrescription,
+} from './prescription/types.js';
+
+export { DEFAULT_PRESCRIPTION_POLICY } from './prescription/types.js';
+
+export type {
   AudienceIntelligence,
   NicheIntelligence,
   ProfileBrain,
