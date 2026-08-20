@@ -25,6 +25,7 @@ async function tmpStore(): Promise<JsonlIntelligenceStore> {
 
 function onboardingInput(overrides: Partial<ProfileOnboardingInput> = {}): ProfileOnboardingInput {
   return {
+    workspaceId: 'ws_test',
     creatorOsAccountId: `acct_${Math.random().toString(36).slice(2, 10)}`,
     platform: 'threads',
     brandName: 'Finance Notes',
@@ -765,6 +766,6 @@ describe('Transfer — invariants', () => {
       ctx,
     );
     await engine.buildColdStartGuidance(ctx, [candidate({ id: 'd' })]);
-    expect(await store.listFindings()).toEqual([]);
+    expect(await store.listFindings({ workspaceId: 'ws_test' })).toEqual([]);
   });
 });

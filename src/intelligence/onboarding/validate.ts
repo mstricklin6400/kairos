@@ -58,6 +58,10 @@ export function validateOnboardingInput(input: ProfileOnboardingInput): Validati
     errors.push({ field, message });
   };
 
+  if (!input.workspaceId?.trim()) {
+    fail('workspaceId', 'A workspace id is required — a profile with no tenant cannot be isolated from other customers.');
+  }
+
   if (!input.creatorOsAccountId?.trim()) {
     fail('creatorOsAccountId', 'A CreatorOS account id is required — Kairos never creates a competing account identity.');
   }

@@ -56,6 +56,13 @@ export interface ProfileOnboardingInput {
   /** Set to re-onboard an existing profile (update); omit to create a new one. */
   readonly profileId?: string;
 
+  /**
+   * The tenant this profile belongs to. Required — see
+   * `SocialProfile.workspaceId`. Supplied by the application from the
+   * authenticated session, never by the person filling in the form.
+   */
+  readonly workspaceId: string;
+
   // ---- Account identity — CreatorOS remains the source of truth for the
   // account itself; this is only the reference plus display context. ----
   readonly creatorOsAccountId: string;

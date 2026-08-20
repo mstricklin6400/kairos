@@ -22,6 +22,7 @@ async function tmpStore(): Promise<JsonlIntelligenceStore> {
 
 function onboardingInput(overrides: Partial<ProfileOnboardingInput> = {}): ProfileOnboardingInput {
   return {
+    workspaceId: 'ws_test',
     creatorOsAccountId: '507f1f77bcf86cd799439011',
     platform: 'threads',
     brandName: 'Lift Notes',
@@ -538,7 +539,7 @@ describe('Measurement — no science engine, no strategy mutation, no AI, Creato
     const store = await tmpStore();
     const profile = await seedProfile(store);
     await ingestMeasurementSnapshot(snapshotInput(profile), store);
-    const findings = await store.listFindings();
+    const findings = await store.listFindings({ workspaceId: 'ws_test' });
     expect(findings).toEqual([]);
   });
 

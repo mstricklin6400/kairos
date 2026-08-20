@@ -256,11 +256,31 @@ import type {
   SocialIntelligenceAgent,
 } from '../agentic/types.js';
 
-export interface ProfileQuery {
+/**
+ * TENANT SCOPE
+ * ------------------------------------------------------------------------
+ * Private records must be reachable only through a stated scope. Expressing
+ * that as a union rather than two optional fields makes the dangerous call
+ * — `listFindings({})`, which would return every customer's findings — a
+ * COMPILE ERROR rather than a silent cross-tenant read.
+ *
+ * `workspaceId` is the tenant. `profileId` is narrower and lives inside
+ * exactly one workspace, so either is a sufficient boundary; a caller that
+ * has neither has not decided whose data it is asking for.
+ *
+ * Global knowledge (strategy principles, research, battle protocols, peer
+ * cohorts, genome patterns) is deliberately NOT scoped this way — it
+ * belongs to no single customer and carries no customer identifiers.
+ */
+export type TenantScope =
+  | { readonly workspaceId: string; readonly profileId?: string }
+  | { readonly workspaceId?: string; readonly profileId: string };
+
+export type ProfileQuery = TenantScope & {
   readonly platform?: Platform;
   readonly niche?: string;
   readonly limit?: number;
-}
+};
 
 export interface StrategyPrincipleQuery {
   readonly status?: StrategyPrincipleStatus;
@@ -269,25 +289,22 @@ export interface StrategyPrincipleQuery {
   readonly limit?: number;
 }
 
-export interface ExperimentQuery {
-  readonly profileId?: string;
+export type ExperimentQuery = TenantScope & {
   readonly objective?: GrowthObjective;
   readonly platform?: Platform;
   readonly limit?: number;
-}
+};
 
-export interface HypothesisQuery {
-  readonly profileId?: string;
+export type HypothesisQuery = TenantScope & {
   readonly status?: HypothesisStatus;
   readonly limit?: number;
-}
+};
 
-export interface FindingQuery {
-  readonly profileId?: string;
+export type FindingQuery = TenantScope & {
   readonly status?: FindingStatus;
   readonly scopeLevel?: KnowledgeScopeLevel;
   readonly limit?: number;
-}
+};
 
 export interface BaselineQuery {
   readonly profileId: string;
@@ -435,11 +452,9 @@ export interface GenomePatternQuery {
   readonly limit?: number;
 }
 
-export interface AgentQuery {
-  readonly workspaceId?: string;
-  readonly profileId?: string;
+export type AgentQuery = TenantScope & {
   readonly limit?: number;
-}
+};
 
 export interface AgentMissionQuery {
   readonly agentId: string;
@@ -476,7 +491,7 @@ export interface IntelligenceStore {
   /** Upsert by id. */
   saveProfile(profile: SocialProfile): Promise<void>;
   getProfile(id: string): Promise<SocialProfile | null>;
-  listProfiles(query?: ProfileQuery): Promise<SocialProfile[]>;
+  listProfiles(query: ProfileQuery): Promise<SocialProfile[]>;
 
   /** Upsert by profileId — one brain per profile. */
   saveProfileBrain(brain: ProfileBrain): Promise<void>;
@@ -490,7 +505,7 @@ export interface IntelligenceStore {
   /** Upsert by id. Carries the experiment's own latest-known result snapshot, if any. */
   saveExperiment(experiment: Experiment): Promise<void>;
   getExperiment(id: string): Promise<Experiment | null>;
-  listExperiments(query?: ExperimentQuery): Promise<Experiment[]>;
+  listExperiments(query: ExperimentQuery): Promise<Experiment[]>;
 
   /** Append-only raw evidence — an experiment may have many observations, none of which are ever overwritten. */
   saveExperimentObservation(observation: ExperimentObservation): Promise<void>;
@@ -500,12 +515,12 @@ export interface IntelligenceStore {
   /** Upsert by id. */
   saveHypothesis(hypothesis: Hypothesis): Promise<void>;
   getHypothesis(id: string): Promise<Hypothesis | null>;
-  listHypotheses(query?: HypothesisQuery): Promise<Hypothesis[]>;
+  listHypotheses(query: HypothesisQuery): Promise<Hypothesis[]>;
 
   /** Upsert by id. Canonical source of truth for a finding's current status — see module doc. */
   saveFinding(finding: Finding): Promise<void>;
   getFinding(id: string): Promise<Finding | null>;
-  listFindings(query?: FindingQuery): Promise<Finding[]>;
+  listFindings(query: FindingQuery): Promise<Finding[]>;
 
   /**
    * Upsert by the stable (profileId, metric, comparisonScope) key —
@@ -677,7 +692,7 @@ export interface IntelligenceStore {
   /** Upsert by id. */
   saveAgent(agent: SocialIntelligenceAgent): Promise<void>;
   getAgent(id: string): Promise<SocialIntelligenceAgent | null>;
-  listAgents(query?: AgentQuery): Promise<SocialIntelligenceAgent[]>;
+  listAgents(query: AgentQuery): Promise<SocialIntelligenceAgent[]>;
 
   /** Upsert by id. A revised mission is a NEW record that supersedes the old one. */
   saveAgentMission(mission: AgentMission): Promise<void>;

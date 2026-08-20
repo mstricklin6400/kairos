@@ -19,6 +19,7 @@
 import { randomUUID } from 'node:crypto';
 import type { GrowthObjective, IsoDateTime, Platform } from '../common/types.js';
 import type { AnalysisLimitation } from '../science/types.js';
+import { REVENUE_POSITIVE_EVENTS, REVENUE_REVERSING_EVENTS } from '../measurement/types.js';
 import type { IntelligenceStore } from '../storage/store.js';
 import { AdaptiveStrategyEngine } from '../adaptive/engine.js';
 import { ScienceEngine } from '../science/engine.js';
@@ -579,22 +580,52 @@ export class AgenticPrescriptionEngine {
 
   /* ---- Business outcomes --------------------------------------------- */
 
-  /** Business outcomes from first-party attribution ONLY. Never inferred from analytics. */
+  /**
+   * Business outcomes from first-party attribution ONLY. Never inferred from
+   * analytics.
+   *
+   * MONEY THAT WENT BACK OUT IS COUNTED
+   * ----------------------------------------------------------------------
+   * Refunds and chargebacks reduce `netRevenue`. Only `netRevenue` may be
+   * shown to a customer as "revenue" — a Money Board that reports gross as
+   * though it were net overstates the value of the thing being sold.
+   *
+   * `sales` is deliberately NOT reduced by a reversal: the purchase really
+   * happened, and hiding it would corrupt conversion analysis. Reversals are
+   * reported alongside as `reversedSales`.
+   */
   async getBusinessOutcomeState(profileId: string): Promise<BusinessOutcomeState> {
     const events = await this.store.listAttributionEvents({ profileId });
-    let leads = 0, sales = 0, revenue = 0;
+    let leads = 0, sales = 0, reversedSales = 0;
+    let grossRevenue = 0, refunds = 0, chargebacks = 0;
     let currency: string | undefined;
     let unknownAttribution = 0;
 
     for (const event of events) {
       if (event.eventType === 'lead') leads += 1;
       if (event.eventType === 'purchase' || event.eventType === 'repeat_purchase') sales += 1;
-      if (event.value !== undefined && (event.eventType === 'purchase' || event.eventType === 'repeat_purchase' || event.eventType === 'revenue')) {
-        revenue += event.value;
-        currency = event.currency ?? currency;
+      if (REVENUE_REVERSING_EVENTS.includes(event.eventType)) reversedSales += 1;
+
+      if (event.value !== undefined) {
+        if (REVENUE_POSITIVE_EVENTS.includes(event.eventType)) {
+          grossRevenue += event.value;
+          currency = event.currency ?? currency;
+        } else if (event.eventType === 'refund') {
+          // Stored positive; the sign is applied here so a caller can never
+          // flip a refund into income by forgetting to negate it.
+          refunds += Math.abs(event.value);
+          currency = event.currency ?? currency;
+        } else if (event.eventType === 'chargeback') {
+          chargebacks += Math.abs(event.value);
+          currency = event.currency ?? currency;
+        }
       }
       if (event.attributionMethod === 'unknown') unknownAttribution += 1;
     }
+
+    // Not clamped at zero: a period that returned more than it took is a real
+    // outcome, and rounding it up to zero would hide it.
+    const netRevenue = grossRevenue - refunds - chargebacks;
 
     const attributionQuality: BusinessOutcomeState['attributionQuality'] =
       events.length === 0 ? 'none'
@@ -602,7 +633,9 @@ export class AgenticPrescriptionEngine {
           : unknownAttribution > 0 ? 'partial' : 'good';
 
     return {
-      leads, sales, revenue, currency, attributionQuality,
+      leads, sales, reversedSales,
+      grossRevenue, refunds, chargebacks, netRevenue,
+      currency, attributionQuality,
       unattributedNote:
         events.length === 0
           ? 'No first-party business outcomes recorded. Revenue is never inferred from platform analytics.'

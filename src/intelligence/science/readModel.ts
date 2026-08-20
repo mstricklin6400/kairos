@@ -104,11 +104,13 @@ function attributionMetricFor(event: AttributionEvent): { metric: PerformanceMet
       return { metric: 'sales', value: 1 };
     case 'revenue':
       return event.value !== undefined ? { metric: 'revenue', value: event.value } : undefined;
-    // A checkout is not yet a sale; a refund is a reversal this milestone
-    // does not net out. Both are stored evidence, neither is a countable
-    // positive outcome here.
+    // A checkout is not yet a sale. Refunds and chargebacks are reversals:
+    // they net out against revenue in the business-outcome read model, but
+    // they are not observations of a positive outcome, so no analytical row
+    // is emitted here. All three remain stored evidence.
     case 'checkout':
     case 'refund':
+    case 'chargeback':
     case 'other':
       return undefined;
     default: {

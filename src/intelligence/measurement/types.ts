@@ -144,10 +144,29 @@ export type AttributionEventType =
   | 'lead'
   | 'checkout'
   | 'purchase'
+  /** Money returned to the customer. Reduces net revenue; never deletes the original purchase. */
   | 'refund'
+  /** Money clawed back by the card network. Reduces net revenue, and is tracked separately from a refund because the two mean different things commercially. */
+  | 'chargeback'
   | 'repeat_purchase'
   | 'revenue'
   | 'other';
+
+/**
+ * Event types that REMOVE money that was previously counted.
+ *
+ * Their `value` is recorded as a positive amount — the sign is applied by
+ * whatever aggregates them, so a stored event never depends on the caller
+ * remembering to negate it.
+ */
+export const REVENUE_REVERSING_EVENTS: readonly AttributionEventType[] = ['refund', 'chargeback'];
+
+/** Event types that ADD attributed money. */
+export const REVENUE_POSITIVE_EVENTS: readonly AttributionEventType[] = [
+  'purchase',
+  'repeat_purchase',
+  'revenue',
+];
 
 /**
  * How confidently this event ties back to a specific profile/experiment/

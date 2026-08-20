@@ -285,8 +285,45 @@ export class JsonlIntelligenceStore implements IntelligenceStore {
     return all.find((p) => p.id === id) ?? null;
   }
 
-  async listProfiles(query: ProfileQuery = {}): Promise<SocialProfile[]> {
+  /**
+   * Every profile id belonging to one tenant.
+   *
+   * This is the profile -> workspace resolution the whole isolation model
+   * rests on: private records key on `profileId`, so scoping them to a
+   * workspace means first resolving which profiles that workspace owns.
+   * A workspace with no profiles resolves to an EMPTY set, which correctly
+   * yields no records rather than falling back to "everything".
+   */
+  private async profileIdsForWorkspace(workspaceId: string): Promise<Set<string>> {
+    const profiles = await readLatestByKey<SocialProfile>(profilesPath(this.workspaceRoot), (p) => p.id);
+    return new Set(profiles.filter((p) => p.workspaceId === workspaceId).map((p) => p.id));
+  }
+
+  /**
+   * Applies a `TenantScope` to records that carry an optional `profileId`.
+   * Both scope forms narrow; neither ever widens.
+   */
+  private async scopeToTenant<T extends { readonly profileId?: string }>(
+    records: readonly T[],
+    query: { readonly workspaceId?: string; readonly profileId?: string },
+  ): Promise<T[]> {
+    let scoped = [...records];
+    if (query.profileId !== undefined) {
+      scoped = scoped.filter((r) => r.profileId === query.profileId);
+    }
+    if (query.workspaceId !== undefined) {
+      const owned = await this.profileIdsForWorkspace(query.workspaceId);
+      // A record with no profileId belongs to no tenant, so it is not
+      // another customer's — but it is not this customer's either.
+      scoped = scoped.filter((r) => r.profileId !== undefined && owned.has(r.profileId));
+    }
+    return scoped;
+  }
+
+  async listProfiles(query: ProfileQuery): Promise<SocialProfile[]> {
     let profiles = await readLatestByKey<SocialProfile>(profilesPath(this.workspaceRoot), (p) => p.id);
+    if (query.workspaceId) profiles = profiles.filter((p) => p.workspaceId === query.workspaceId);
+    if (query.profileId) profiles = profiles.filter((p) => p.id === query.profileId);
     if (query.platform) profiles = profiles.filter((p) => p.platform === query.platform);
     if (query.niche) profiles = profiles.filter((p) => p.market.niche === query.niche);
     profiles.sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1));
@@ -329,9 +366,9 @@ export class JsonlIntelligenceStore implements IntelligenceStore {
     return all.find((e) => e.id === id) ?? null;
   }
 
-  async listExperiments(query: ExperimentQuery = {}): Promise<Experiment[]> {
-    let experiments = await readLatestByKey<Experiment>(experimentsPath(this.workspaceRoot), (e) => e.id);
-    if (query.profileId) experiments = experiments.filter((e) => e.profileId === query.profileId);
+  async listExperiments(query: ExperimentQuery): Promise<Experiment[]> {
+    const all = await readLatestByKey<Experiment>(experimentsPath(this.workspaceRoot), (e) => e.id);
+    let experiments = await this.scopeToTenant(all, query);
     if (query.objective) experiments = experiments.filter((e) => e.objective === query.objective);
     if (query.platform) experiments = experiments.filter((e) => e.platform === query.platform);
     experiments.sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1));
@@ -361,9 +398,9 @@ export class JsonlIntelligenceStore implements IntelligenceStore {
     return all.find((h) => h.id === id) ?? null;
   }
 
-  async listHypotheses(query: HypothesisQuery = {}): Promise<Hypothesis[]> {
-    let hypotheses = await readLatestByKey<Hypothesis>(hypothesesPath(this.workspaceRoot), (h) => h.id);
-    if (query.profileId) hypotheses = hypotheses.filter((h) => h.profileId === query.profileId);
+  async listHypotheses(query: HypothesisQuery): Promise<Hypothesis[]> {
+    const all = await readLatestByKey<Hypothesis>(hypothesesPath(this.workspaceRoot), (h) => h.id);
+    let hypotheses = await this.scopeToTenant(all, query);
     if (query.status) hypotheses = hypotheses.filter((h) => h.status === query.status);
     hypotheses.sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
     return hypotheses.slice(0, query.limit ?? 100);
@@ -378,9 +415,9 @@ export class JsonlIntelligenceStore implements IntelligenceStore {
     return all.find((f) => f.id === id) ?? null;
   }
 
-  async listFindings(query: FindingQuery = {}): Promise<Finding[]> {
-    let findings = await readLatestByKey<Finding>(findingsPath(this.workspaceRoot), (f) => f.id);
-    if (query.profileId) findings = findings.filter((f) => f.profileId === query.profileId);
+  async listFindings(query: FindingQuery): Promise<Finding[]> {
+    const all = await readLatestByKey<Finding>(findingsPath(this.workspaceRoot), (f) => f.id);
+    let findings = await this.scopeToTenant(all, query);
     if (query.status) findings = findings.filter((f) => f.status === query.status);
     if (query.scopeLevel) findings = findings.filter((f) => f.scope.level === query.scopeLevel);
     findings.sort((a, b) => (a.lastValidatedAt < b.lastValidatedAt ? 1 : -1));
@@ -919,7 +956,7 @@ export class JsonlIntelligenceStore implements IntelligenceStore {
     return all.find((a) => a.id === id) ?? null;
   }
 
-  async listAgents(query: AgentQuery = {}): Promise<SocialIntelligenceAgent[]> {
+  async listAgents(query: AgentQuery): Promise<SocialIntelligenceAgent[]> {
     let all = await readLatestByKey<SocialIntelligenceAgent>(agenticPath(this.workspaceRoot, 'agents'), (a) => a.id);
     if (query.workspaceId) all = all.filter((a) => a.workspaceId === query.workspaceId);
     if (query.profileId) all = all.filter((a) => a.profileIds.includes(query.profileId as string));

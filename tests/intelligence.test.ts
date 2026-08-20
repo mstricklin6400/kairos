@@ -20,6 +20,7 @@ const NOW = '2026-08-19T12:00:00Z';
 function profile(overrides: Partial<SocialProfile> = {}): SocialProfile {
   return {
     id: 'prof_1',
+    workspaceId: 'ws_test',
     creatorOsAccountId: '507f1f77bcf86cd799439011',
     platform: 'threads',
     identity: {

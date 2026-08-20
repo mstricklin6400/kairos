@@ -438,7 +438,7 @@ describe('Strategy & Research — StrategyClaim', () => {
     const result = await ingestStrategyClaim(claimInput(source.id), store, NOW);
     expect(result.ok).toBe(true);
     // No Finding was ever created as a side effect.
-    const findings = await store.listFindings();
+    const findings = await store.listFindings({ workspaceId: 'ws_test' });
     expect(findings).toEqual([]);
   });
 });

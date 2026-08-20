@@ -1120,7 +1120,7 @@ describe('Genome architecture invariants', () => {
     await engine.upsertPattern({
       statement: 'x', context: ctx(), objective: 'lead', supportingEvidence: independentEvidence(3),
     });
-    expect(await store.listFindings()).toEqual([]);
+    expect(await store.listFindings({ workspaceId: 'ws_test' })).toEqual([]);
   });
 
   it('depends on the IntelligenceStore port, not the JSONL adapter', async () => {

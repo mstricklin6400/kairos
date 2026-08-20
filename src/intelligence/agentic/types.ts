@@ -701,8 +701,21 @@ export interface AgentState {
  */
 export interface BusinessOutcomeState {
   readonly leads: number;
+  /** Completed purchases, NOT reduced by refunds — a refunded sale still happened. */
   readonly sales: number;
-  readonly revenue: number;
+  /** Purchases later refunded or charged back. Reported separately so `sales` stays honest. */
+  readonly reversedSales: number;
+  /** Everything attributed in, before money went back out. */
+  readonly grossRevenue: number;
+  readonly refunds: number;
+  readonly chargebacks: number;
+  /**
+   * `grossRevenue - refunds - chargebacks`. **This is the only figure that
+   * may be presented as "revenue" to a customer.** It can be negative if
+   * more was returned than was taken in the period, and that is reported
+   * rather than clamped to zero.
+   */
+  readonly netRevenue: number;
   readonly currency?: string;
   /** How much of the above can actually be attributed to social activity. */
   readonly attributionQuality: 'none' | 'partial' | 'good' | 'unknown';

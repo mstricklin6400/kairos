@@ -169,6 +169,20 @@ export interface ProfileMonetization {
  */
 export interface SocialProfile {
   readonly id: string;
+  /**
+   * The tenant this profile belongs to — one paying customer.
+   *
+   * REQUIRED, and the root of the isolation model. Every other private
+   * record in the system (findings, experiments, measurements, money) is
+   * reachable only through a profile, so resolving profile → workspace here
+   * is what lets the store scope everything else. A profile with no
+   * workspace could not be filtered out of another customer's results,
+   * which is why this is not optional.
+   *
+   * Distinct from `creatorOsAccountId`: that identifies an account on a
+   * third-party execution platform, and one workspace may hold several.
+   */
+  readonly workspaceId: string;
   /** Canonical CreatorOS account reference. Never replaced by a Kairos id. */
   readonly creatorOsAccountId: string;
   readonly platform: Platform;

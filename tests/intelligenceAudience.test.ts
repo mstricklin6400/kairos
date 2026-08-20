@@ -28,6 +28,7 @@ async function tmpStore(): Promise<JsonlIntelligenceStore> {
 
 function onboardingInput(overrides: Partial<ProfileOnboardingInput> = {}): ProfileOnboardingInput {
   return {
+    workspaceId: 'ws_test',
     creatorOsAccountId: '507f1f77bcf86cd799439011',
     platform: 'threads',
     brandName: 'Lift Notes',

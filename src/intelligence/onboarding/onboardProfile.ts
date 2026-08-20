@@ -65,6 +65,10 @@ function composeDeclaredAudience(input: ProfileOnboardingInput): string {
 function buildSocialProfile(input: ProfileOnboardingInput, existing: SocialProfile | null, now: IsoDateTime): SocialProfile {
   return {
     id: existing?.id ?? `prof_${randomUUID()}`,
+    // Re-onboarding never moves a profile between tenants: the stored
+    // workspace wins, so a crafted input cannot reassign someone else's
+    // profile to the caller's workspace.
+    workspaceId: existing?.workspaceId ?? input.workspaceId,
     creatorOsAccountId: input.creatorOsAccountId,
     platform: input.platform,
     identity: {

@@ -526,7 +526,8 @@ Confirmed properties:
 - Partial attribution is reported honestly ("1 of 2 event(s) have unknown
   attribution").
 - Refunds are **not** currently representable — `AttributionEventType` has no
-  refund/chargeback member. (Debt M-7.)
+  chargeback member, and `refund` events were silently dropped from the
+  revenue total. (Debt M-7 — **CLOSED in P0-2**; see §45.)
 
 **External integrations still required:** payment processor (Stripe et al.)
 for real purchase events, CRM for lead qualification, and a link-tracking
@@ -928,7 +929,7 @@ tests will fail when those gaps close, which is the intent.
 
 ### BLOCKER (for MVP — not for freeze)
 
-**B-1 · No tenant boundary below Milestone 12**
+**B-1 · No tenant boundary below Milestone 12** — **CLOSED in P0-1, see §45**
 *Modules:* `storage`, `profiles`, and every pre-M12 domain module.
 *Consequence:* the first HTTP endpoint over `listFindings` / `listProfiles` /
 `listExperiments` can serve one customer another's data.
@@ -1007,9 +1008,12 @@ and no code refreshes them.
 
 **M-6 · JSONL reads the whole file per query** — see §29.
 
-**M-7 · Refunds are not representable** — `AttributionEventType` has no
-refund or chargeback member, so revenue can only go up. Material for a
-commercially focused product.
+**M-7 · Refunds did not reduce revenue** — **CLOSED in P0-2, see §45.**
+Originally reported as *"refunds are not representable"*, which was wrong:
+`AttributionEventType` already included `'refund'`. The real defect was
+worse — `getBusinessOutcomeState` counted only positive events and silently
+dropped refunds, so revenue could only ever go up while appearing to work.
+Re-rated **HIGH** on discovery.
 
 **M-8 · `buildLivingPrescription` ignores experiment locks** — a rebuild
 mid-experiment could shift platform allocation. Low risk today because
@@ -1150,9 +1154,9 @@ commercial-IP argument should decide the destination.
 
 ## 40. Pre-MVP Fix List, In Order
 
-1. **B-1** — Add `workspaceId` to `SocialProfile`; require it on scope-bearing
-   store queries; resolve profile→workspace at the port. *Nothing customer-
-   facing ships before this.*
+1. ~~**B-1** — Add `workspaceId` to `SocialProfile`; require it on
+   scope-bearing store queries; resolve profile→workspace at the port.~~
+   **DONE (P0-1).**
 2. **B-2** — Define the service layer of §38 (private contract first).
 3. **H-4** — Invoke `IntelligenceTransferEngine` in the decision cycle so
    cold start receives peer-informed candidates.
@@ -1162,7 +1166,8 @@ commercial-IP argument should decide the destination.
    header; migrate `OfferPrescription` into `offerStrategy`.
 6. **M-1** — Deduplicate the agent's evidence-state tally by lineage.
 7. **M-3** — Populate or remove the always-empty M12 fields.
-8. **M-7** — Add refund/chargeback attribution event types.
+8. ~~**M-7** — Add refund/chargeback attribution event types.~~
+   **DONE (P0-2).**
 9. **M-2 / M-8** — Derive `activeExperimentIds` from the store; make
    `buildLivingPrescription` respect experiment locks.
 10. **L-3** — Build a renderer for `PrescriptionExport`.
@@ -1172,3 +1177,51 @@ Genome with season and protocol provenance.
 
 **When real load demands it (not before):** M-6 — Postgres adapter behind the
 existing port.
+
+---
+
+## 45. Post-Audit Closures
+
+Work completed against this audit's fix list. The freeze rules permit it:
+integration gaps B-1/B-2 and bug fixes are both explicitly allowed.
+
+### P0-1 — Tenant boundary (closes BLOCKER B-1)
+
+- `SocialProfile.workspaceId` is now **required**. It is the root of the
+  isolation model: every private record reaches a tenant through a profile.
+- `ProfileOnboardingInput.workspaceId` is required and validated; onboarding
+  fails with a `workspaceId` error if it is blank.
+- **Re-onboarding cannot move a profile between tenants.** The stored
+  workspace wins over the supplied one, so a crafted input cannot reassign
+  another customer's profile.
+- `TenantScope` makes scope a **compile-time requirement** on the five
+  private list queries (`listProfiles`, `listFindings`, `listExperiments`,
+  `listHypotheses`, `listAgents`). `listFindings({})` no longer compiles.
+  Global knowledge — strategy principles, research, battle protocols, peer
+  cohorts, genome patterns — is deliberately left unscoped: it belongs to no
+  customer and carries no customer identifiers.
+- The adapter resolves **profile → workspace** via `profileIdsForWorkspace`.
+  A workspace owning no profiles resolves to an empty set and therefore
+  returns no records — never a fallback to everything.
+
+### P0-2 — Revenue correctness (closes M-7, re-rated HIGH)
+
+- Added `chargeback` to `AttributionEventType`, alongside the existing
+  `refund`.
+- `BusinessOutcomeState` now reports `grossRevenue`, `refunds`,
+  `chargebacks` and **`netRevenue`** separately. Only `netRevenue` may be
+  shown to a customer as "revenue".
+- Reversals are absolute-valued on aggregation, so a caller that pre-negates
+  a refund cannot turn it into income.
+- `netRevenue` is **not clamped at zero** — a period that returned more than
+  it took reports negative.
+- `sales` is deliberately NOT reduced by a reversal (the purchase really
+  happened); reversals are reported alongside as `reversedSales`.
+- The exhaustive switch in `science/readModel.ts` was updated: reversals net
+  out against revenue but emit no positive analytical observation.
+
+### Verification
+
+Typecheck clean. **1072 / 1073 tests pass** — the sole failure is the
+pre-existing, unrelated banner credential test. No CreatorOS-facing files
+modified. No dependencies added.

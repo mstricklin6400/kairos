@@ -95,6 +95,7 @@ function seasonInput(protocolId: string, scoringModelId: string, overrides: Part
 
 function onboardingInput(overrides: Partial<ProfileOnboardingInput> = {}): ProfileOnboardingInput {
   return {
+    workspaceId: 'ws_test',
     creatorOsAccountId: `acct_${Math.random().toString(36).slice(2, 10)}`,
     platform: 'threads',
     brandName: 'Finance Notes',
@@ -656,7 +657,7 @@ describe('Battle — leaderboard is never a scientific finding', () => {
     const { store, engine, season } = await setupWithMeasurements();
     const standings = await engine.calculateStandings({ seasonId: season.id });
     expect(standings.length).toBeGreaterThan(0);
-    expect(await store.listFindings()).toEqual([]);
+    expect(await store.listFindings({ workspaceId: 'ws_test' })).toEqual([]);
   });
 
   it('records a battle outcome without creating any Finding', async () => {
@@ -670,7 +671,7 @@ describe('Battle — leaderboard is never a scientific finding', () => {
       seasonId: season.id, category: 'conversation', categoryResult: categoryResult!, evidence: evidence!,
     });
     expect(outcome.scienceFindingIds).toEqual([]);
-    expect(await store.listFindings()).toEqual([]);
+    expect(await store.listFindings({ workspaceId: 'ws_test' })).toEqual([]);
   });
 
   it('records competition and science verdicts separately so they can disagree', async () => {

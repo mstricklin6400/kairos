@@ -45,6 +45,7 @@ function engineWith(store: IntelligenceStore): AgenticPrescriptionEngine {
 
 function onboardingInput(overrides: Partial<ProfileOnboardingInput> = {}): ProfileOnboardingInput {
   return {
+    workspaceId: 'ws_test',
     creatorOsAccountId: '507f1f77bcf86cd799439011',
     platform: 'threads',
     brandName: 'Ledger Lines',
@@ -1533,7 +1534,8 @@ describe('Agentic — business outcomes', () => {
     const profile = await seedProfile(store);
     const state = await engineWith(store).getBusinessOutcomeState(profile.id);
 
-    expect(state.revenue).toBe(0);
+    expect(state.netRevenue).toBe(0);
+    expect(state.grossRevenue).toBe(0);
     expect(state.attributionQuality).toBe('none');
     expect(state.unattributedNote).toContain('never inferred');
   });
@@ -1556,8 +1558,76 @@ describe('Agentic — business outcomes', () => {
     const state = await engineWith(store).getBusinessOutcomeState(profile.id);
 
     expect(state.sales).toBe(1);
-    expect(state.revenue).toBe(250);
+    expect(state.grossRevenue).toBe(250);
+    expect(state.netRevenue).toBe(250);
     expect(state.currency).toBe('USD');
+  });
+
+  it('subtracts a refund from net revenue', async () => {
+    const store = await tmpStore();
+    const profile = await seedProfile(store);
+    await store.saveAttributionEvent(attribution(profile.id, {
+      eventType: 'purchase', value: 5000, currency: 'GBP',
+    }));
+    await store.saveAttributionEvent(attribution(profile.id, {
+      eventType: 'refund', value: 2000, currency: 'GBP',
+    }));
+
+    const state = await engineWith(store).getBusinessOutcomeState(profile.id);
+
+    expect(state.grossRevenue).toBe(5000);
+    expect(state.refunds).toBe(2000);
+    expect(state.netRevenue).toBe(3000);
+  });
+
+  it('subtracts a chargeback from net revenue and tracks it separately', async () => {
+    const store = await tmpStore();
+    const profile = await seedProfile(store);
+    await store.saveAttributionEvent(attribution(profile.id, {
+      eventType: 'purchase', value: 800, currency: 'GBP',
+    }));
+    await store.saveAttributionEvent(attribution(profile.id, {
+      eventType: 'chargeback', value: 300, currency: 'GBP',
+    }));
+
+    const state = await engineWith(store).getBusinessOutcomeState(profile.id);
+
+    expect(state.chargebacks).toBe(300);
+    expect(state.refunds).toBe(0);
+    expect(state.netRevenue).toBe(500);
+  });
+
+  it('treats a negatively-signed reversal the same as a positive one', async () => {
+    const store = await tmpStore();
+    const profile = await seedProfile(store);
+    await store.saveAttributionEvent(attribution(profile.id, { eventType: 'purchase', value: 100 }));
+    // A caller that pre-negates the amount must not turn a refund into income.
+    await store.saveAttributionEvent(attribution(profile.id, { eventType: 'refund', value: -40 }));
+
+    expect((await engineWith(store).getBusinessOutcomeState(profile.id)).netRevenue).toBe(60);
+  });
+
+  it('keeps the sale counted even after it is refunded', async () => {
+    const store = await tmpStore();
+    const profile = await seedProfile(store);
+    await store.saveAttributionEvent(attribution(profile.id, { eventType: 'purchase', value: 100 }));
+    await store.saveAttributionEvent(attribution(profile.id, { eventType: 'refund', value: 100 }));
+
+    const state = await engineWith(store).getBusinessOutcomeState(profile.id);
+
+    // The purchase really happened; hiding it would corrupt conversion analysis.
+    expect(state.sales).toBe(1);
+    expect(state.reversedSales).toBe(1);
+    expect(state.netRevenue).toBe(0);
+  });
+
+  it('reports a negative net rather than clamping it to zero', async () => {
+    const store = await tmpStore();
+    const profile = await seedProfile(store);
+    await store.saveAttributionEvent(attribution(profile.id, { eventType: 'purchase', value: 100 }));
+    await store.saveAttributionEvent(attribution(profile.id, { eventType: 'refund', value: 250 }));
+
+    expect((await engineWith(store).getBusinessOutcomeState(profile.id)).netRevenue).toBe(-150);
   });
 
   it('flags partial attribution rather than presenting it as clean', async () => {

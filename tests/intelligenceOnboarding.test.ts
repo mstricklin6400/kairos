@@ -16,6 +16,7 @@ async function tmpStore(): Promise<JsonlIntelligenceStore> {
 
 function baseInput(overrides: Partial<ProfileOnboardingInput> = {}): ProfileOnboardingInput {
   return {
+    workspaceId: 'ws_test',
     creatorOsAccountId: '507f1f77bcf86cd799439011',
     platform: 'threads',
     brandName: 'Lift Notes',
@@ -391,7 +392,7 @@ describe('onboardProfile — multiple independent profiles', () => {
     expect(a.ok && b.ok).toBe(true);
     if (!a.ok || !b.ok) return;
     expect(a.profile.id).not.toBe(b.profile.id);
-    const all = await store.listProfiles();
+    const all = await store.listProfiles({ workspaceId: 'ws_test' });
     expect(all.map((p) => p.id).sort()).toEqual([a.profile.id, b.profile.id].sort());
   });
 

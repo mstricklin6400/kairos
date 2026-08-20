@@ -9,12 +9,14 @@
  *
  * WHAT THIS SUITE DELIBERATELY DOES NOT DO
  * ------------------------------------------------------------------------
- * It does not stub a chain into existence. Two links audited as absent are
+ * It does not stub a chain into existence. A link audited as absent is
  * asserted as absent rather than faked, so this file fails loudly if someone
- * later believes they are wired:
+ * later believes it is wired:
  *
  *   - The agentic layer never queries the Social Genome (audit finding H-2).
- *   - `workspaceId` does not reach any pre-Milestone-12 store (finding B-1).
+ *
+ * Audit finding B-1 (no tenant boundary) was CLOSED in P0-1; the tests that
+ * once documented the leak now assert isolation instead.
  *
  * See `docs/ARCHITECTURE_AUDIT_AND_FREEZE.md`.
  */
@@ -44,6 +46,7 @@ async function tmpStore(): Promise<JsonlIntelligenceStore> {
 /** The audit's running example: a bookkeeping business selling consultations. */
 function bookkeeper(overrides: Partial<ProfileOnboardingInput> = {}): ProfileOnboardingInput {
   return {
+    workspaceId: 'ws_test',
     creatorOsAccountId: '507f1f77bcf86cd799439011',
     platform: 'threads',
     brandName: 'Ledger Lines',
@@ -63,8 +66,14 @@ async function seedProfile(store: JsonlIntelligenceStore, overrides: Partial<Pro
 }
 
 /** A workspace with an agent and an active, business-objective-first mission. */
-async function seedWorkspace(store: JsonlIntelligenceStore, workspaceId = 'ws_1', overrides = {}) {
-  const profile = await seedProfile(store, overrides);
+async function seedWorkspace(
+  store: JsonlIntelligenceStore,
+  workspaceId = 'ws_1',
+  overrides: Partial<ProfileOnboardingInput> = {},
+) {
+  // The profile carries the tenant, so it must be the SAME workspace the
+  // agent belongs to — otherwise these tests would prove nothing.
+  const profile = await seedProfile(store, { workspaceId, ...overrides });
   const engine = new AgenticPrescriptionEngine(store, { now: fixedNow });
   const agent = await engine.createAgent({ profileIds: [profile.id], workspaceId });
   const mission = await engine.createMission({
@@ -609,27 +618,93 @@ describe('E2E — customer isolation', () => {
   });
 
   /**
-   * AUDIT FINDING B-1, asserted rather than papered over.
+   * AUDIT FINDING B-1 — CLOSED IN P0-1.
    *
-   * `workspaceId` exists only on Milestone 12 records. Every pre-M12 store is
-   * scoped by `profileId` at best, and several list methods take no required
-   * scope at all — `listFindings({})` returns every customer's findings.
-   *
-   * Nothing is exposed today because the intelligence layer has no HTTP
-   * surface. This test exists so that stops being true loudly rather than
-   * quietly: when tenant scoping is added, it should fail and be updated.
+   * This test previously asserted the leak: `listFindings({})` returned
+   * every customer's findings. Scope is now required by the type system and
+   * enforced by the adapter, so the same call is a compile error and a
+   * workspace-scoped call returns only that tenant's records.
    */
-  it('documents that findings are NOT workspace-scoped below Milestone 12', async () => {
+  it('scopes findings to a workspace, not just to a profile', async () => {
     const store = await tmpStore();
     const a = await seedWorkspace(store, 'ws_a');
     const b = await seedWorkspace(store, 'ws_b', { creatorOsAccountId: '507f1f77bcf86cd799439012' });
     await store.saveFinding(validatedFinding(a.profile.id));
     await store.saveFinding(validatedFinding(b.profile.id));
 
-    // An unscoped call returns BOTH customers' findings.
-    expect(await store.listFindings({})).toHaveLength(2);
-    // Isolation today comes from passing profileId, not from the store.
-    expect(await store.listFindings({ profileId: a.profile.id })).toHaveLength(1);
+    const ownedByA = await store.listFindings({ workspaceId: 'ws_a' });
+
+    expect(ownedByA).toHaveLength(1);
+    expect(ownedByA[0]?.profileId).toBe(a.profile.id);
+    expect(await store.listFindings({ workspaceId: 'ws_b' })).toHaveLength(1);
+    // `listFindings({})` no longer compiles — the scope is not optional.
+  });
+
+  it('scopes experiments and hypotheses to a workspace', async () => {
+    const store = await tmpStore();
+    const a = await seedWorkspace(store, 'ws_a');
+    await seedWorkspace(store, 'ws_b', { creatorOsAccountId: '507f1f77bcf86cd799439012' });
+
+    await store.saveExperiment({
+      id: 'exp_a', profileId: a.profile.id, platform: 'threads', niche: 'bookkeeping', objective: 'lead',
+      contentDna: {
+        topic: 't', hookFamily: 'contrarian-claim', format: 'text',
+        tone: 'contrarian', lengthClass: 'short',
+      },
+      design: { testVariables: ['hookFamily'] },
+      execution: { publishedAt: NOW },
+      createdAt: NOW, updatedAt: NOW,
+    });
+    await store.saveHypothesis({
+      id: 'hyp_a', statement: 'x', scope: { level: 'profile', profileId: a.profile.id },
+      profileId: a.profile.id, independentVariable: 'hookFamily', dependentMetric: 'replies',
+      controlVariables: [], status: 'testing', confidence: 0.3, source: 'experiment',
+      supportingExperimentIds: [], contradictingExperimentIds: [], createdAt: NOW,
+    });
+
+    expect(await store.listExperiments({ workspaceId: 'ws_a' })).toHaveLength(1);
+    expect(await store.listExperiments({ workspaceId: 'ws_b' })).toHaveLength(0);
+    expect(await store.listHypotheses({ workspaceId: 'ws_a' })).toHaveLength(1);
+    expect(await store.listHypotheses({ workspaceId: 'ws_b' })).toHaveLength(0);
+  });
+
+  it('returns nothing for a workspace that owns no profiles', async () => {
+    const store = await tmpStore();
+    const a = await seedWorkspace(store, 'ws_a');
+    await store.saveFinding(validatedFinding(a.profile.id));
+
+    // An unknown workspace resolves to an empty profile set, which must mean
+    // "no records" — never a fallback to everything.
+    expect(await store.listFindings({ workspaceId: 'ws_does_not_exist' })).toHaveLength(0);
+    expect(await store.listProfiles({ workspaceId: 'ws_does_not_exist' })).toHaveLength(0);
+  });
+
+  it('refuses to move a profile between tenants on re-onboarding', async () => {
+    const store = await tmpStore();
+    const a = await seedWorkspace(store, 'ws_a');
+
+    // A crafted re-onboard naming a different workspace must not reassign it.
+    const reonboarded = await onboardProfile(
+      bookkeeper({ profileId: a.profile.id, workspaceId: 'ws_attacker' }),
+      store,
+      NOW,
+    );
+
+    expect(reonboarded.ok).toBe(true);
+    expect(reonboarded.ok && reonboarded.profile.workspaceId).toBe('ws_a');
+    expect(await store.listProfiles({ workspaceId: 'ws_attacker' })).toHaveLength(0);
+  });
+
+  it('rejects onboarding with no workspace', async () => {
+    const store = await tmpStore();
+    const result = await onboardProfile(
+      { ...bookkeeper(), workspaceId: '  ' },
+      store,
+      NOW,
+    );
+
+    expect(result.ok).toBe(false);
+    expect(result.ok === false && result.errors.some((e) => e.field === 'workspaceId')).toBe(true);
   });
 });
 
@@ -649,7 +724,8 @@ describe('E2E — revenue is never inferred', () => {
 
     const outcomes = await engine.getBusinessOutcomeState(profile.id);
 
-    expect(outcomes.revenue).toBe(0);
+    expect(outcomes.netRevenue).toBe(0);
+    expect(outcomes.grossRevenue).toBe(0);
     expect(outcomes.sales).toBe(0);
     expect(outcomes.attributionQuality).toBe('none');
     expect(outcomes.unattributedNote).toContain('never inferred');
@@ -665,8 +741,28 @@ describe('E2E — revenue is never inferred', () => {
     expect(ingested.ok).toBe(true);
 
     const outcomes = await engine.getBusinessOutcomeState(profile.id);
-    expect(outcomes.revenue).toBe(450);
+    expect(outcomes.netRevenue).toBe(450);
     expect(outcomes.evidenceState).toBe('know');
+  });
+
+  it('nets a refund through the full ingest path', async () => {
+    const store = await tmpStore();
+    const { engine, profile } = await seedWorkspace(store);
+    await ingestAttributionEvent({
+      profileId: profile.id, eventType: 'purchase', occurredAt: NOW,
+      value: 5000, currency: 'GBP', attributionMethod: 'utm', source: 'stripe',
+    }, store);
+    const refund = await ingestAttributionEvent({
+      profileId: profile.id, eventType: 'refund', occurredAt: NOW,
+      value: 2000, currency: 'GBP', attributionMethod: 'utm', source: 'stripe',
+    }, store);
+    expect(refund.ok).toBe(true);
+
+    const outcomes = await engine.getBusinessOutcomeState(profile.id);
+
+    // The number a customer is shown must be net, not gross.
+    expect(outcomes.grossRevenue).toBe(5000);
+    expect(outcomes.netRevenue).toBe(3000);
   });
 
   it('keeps unknown attribution unknown rather than rounding it up', async () => {

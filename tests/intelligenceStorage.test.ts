@@ -26,6 +26,7 @@ async function tmpRoot(): Promise<string> {
 function profile(overrides: Partial<SocialProfile> = {}): SocialProfile {
   return {
     id: 'prof_1',
+    workspaceId: 'ws_test',
     creatorOsAccountId: '507f1f77bcf86cd799439011',
     platform: 'threads',
     identity: { brandName: 'Lift Notes', handle: '@liftnotes', faceless: true, voice: ['blunt'] },
@@ -176,7 +177,7 @@ describe('JsonlIntelligenceStore — SocialProfile', () => {
     const store = new JsonlIntelligenceStore(await tmpRoot());
     await store.saveProfile(profile({ id: 'prof_1' }));
     await store.saveProfile(profile({ id: 'prof_2', platform: 'twitter' }));
-    const all = await store.listProfiles();
+    const all = await store.listProfiles({ workspaceId: 'ws_test' });
     expect(all.map((p) => p.id).sort()).toEqual(['prof_1', 'prof_2']);
   });
 
@@ -191,7 +192,7 @@ describe('JsonlIntelligenceStore — SocialProfile', () => {
     const store = new JsonlIntelligenceStore(await tmpRoot());
     await store.saveProfile(profile({ id: 'prof_threads', platform: 'threads' }));
     await store.saveProfile(profile({ id: 'prof_x', platform: 'twitter' }));
-    const threadsOnly = await store.listProfiles({ platform: 'threads' });
+    const threadsOnly = await store.listProfiles({ workspaceId: 'ws_test', platform: 'threads' });
     expect(threadsOnly.map((p) => p.id)).toEqual(['prof_threads']);
   });
 });
@@ -387,7 +388,7 @@ describe('JsonlIntelligenceStore — empty store and corrupt data', () => {
   it('returns safe empty/null results from an empty store', async () => {
     const store = new JsonlIntelligenceStore(await tmpRoot());
     expect(await store.getProfile('nope')).toBeNull();
-    expect(await store.listProfiles()).toEqual([]);
+    expect(await store.listProfiles({ workspaceId: 'ws_test' })).toEqual([]);
     expect(await store.getProfileBrain('nope')).toBeNull();
     expect(await store.getExperiment('nope')).toBeNull();
     expect(await store.listExperimentObservations('nope')).toEqual([]);
@@ -413,7 +414,9 @@ describe('JsonlIntelligenceStore — empty store and corrupt data', () => {
     await store.saveFinding(finding({ id: 'fnd_good' }));
     await appendFile(findingsPath(root), '\nnot json at all\n{"id":\n', 'utf8');
     await store.saveFinding(finding({ id: 'fnd_later' }));
-    const all = await store.listFindings();
+    // Scoped by profile: this test is about surviving a corrupt line, and
+    // no profile record exists here for a workspace to resolve through.
+    const all = await store.listFindings({ profileId: 'prof_1' });
     expect(all.map((f) => f.id).sort()).toEqual(['fnd_good', 'fnd_later']);
   });
 
