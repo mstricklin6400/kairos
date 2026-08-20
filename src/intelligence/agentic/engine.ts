@@ -875,6 +875,26 @@ export class AgenticPrescriptionEngine {
     return { verdict, triggers: [...new Set(triggers)], reasons, assessedAt: now };
   }
 
+  /* ---- Experiment protection ------------------------------------------- */
+
+  /**
+   * The content-DNA variables currently held still by an in-flight experiment
+   * on this profile.
+   *
+   * Derived from Adaptive Strategy's constraint evaluation rather than
+   * re-implemented here — that layer already reads each experiment's
+   * `controlVariable` and `testVariables` and decides what "in flight" means.
+   */
+  async lockedVariablesFor(profileId: string): Promise<string[]> {
+    const constraints = await this.adaptive.evaluateStrategyConstraints(profileId);
+    const locked = new Set<string>();
+    for (const constraint of constraints) {
+      if (constraint.source !== 'active_experiment') continue;
+      for (const variable of constraint.lockedVariables ?? []) locked.add(variable);
+    }
+    return [...locked];
+  }
+
   /* ---- Decision cycle -------------------------------------------------- */
 
   /**
@@ -887,6 +907,7 @@ export class AgenticPrescriptionEngine {
   async runDecisionCycle(input: {
     readonly agentId: string;
     readonly profileId: string;
+    /** Extra locks the caller knows about. Merged with the locks derived below. */
     readonly lockedVariables?: readonly string[];
   }): Promise<AgentDecisionCycleResult | null> {
     const agent = await this.store.getAgent(input.agentId);
@@ -895,6 +916,12 @@ export class AgenticPrescriptionEngine {
     const mission = agent.missionId ? await this.store.getAgentMission(agent.missionId) : null;
     const evidenceStateSummary = await this.getEvidenceStateSummary(input.profileId);
     const diagnostics: AgentDiagnostic[] = [];
+
+    // Locks are DERIVED from the experiments actually in flight, not merely
+    // accepted from the caller. Protecting a running experiment must not
+    // depend on whoever invoked the cycle remembering to say so.
+    const derivedLocks = await this.lockedVariablesFor(input.profileId);
+    const lockedVariables = [...new Set([...derivedLocks, ...(input.lockedVariables ?? [])])];
 
     // ---- DIAGNOSE ----
     if (evidenceStateSummary.know === 0 && evidenceStateSummary.suspect === 0) {
@@ -912,8 +939,11 @@ export class AgenticPrescriptionEngine {
     if (profile && profile.monetization.offers.filter((o) => o.active).length === 0) {
       diagnostics.push({ code: 'offer_missing', detail: 'No active offer configured.' });
     }
-    if ((input.lockedVariables ?? []).length > 0) {
-      diagnostics.push({ code: 'experiment_incomplete', detail: 'A controlled experiment is running; variables are locked.' });
+    if (lockedVariables.length > 0) {
+      diagnostics.push({
+        code: 'experiment_incomplete',
+        detail: `A controlled experiment is running; ${lockedVariables.join(', ')} locked for its duration.`,
+      });
     }
 
     // ---- DECIDE: reuse Adaptive Strategy, never re-derive it ----
@@ -948,7 +978,7 @@ export class AgenticPrescriptionEngine {
           hypothesisIds: recommendation.basis.hypothesisIds,
         },
         touchedVariables: [],
-        lockedVariables: input.lockedVariables,
+        lockedVariables,
         extraConstraints: missionConstraints,
       });
       if (action.status === 'deferred') {

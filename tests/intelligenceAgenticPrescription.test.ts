@@ -1436,7 +1436,10 @@ describe('Agentic — decision cycle', () => {
       now: fixedNow,
       // An Adaptive Strategy that recommends nothing — the agent must not
       // invent work to fill the silence.
-      adaptiveEngine: { buildAdaptiveStrategyPlan: async () => null } as never,
+      adaptiveEngine: {
+        buildAdaptiveStrategyPlan: async () => null,
+        evaluateStrategyConstraints: async () => [],
+      } as never,
     });
     const agent = await engine.createAgent({ profileIds: [profile.id] });
     await engine.createMission({ agentId: agent.id, statement: 'Leads', primaryObjective: 'lead' });
@@ -1454,6 +1457,7 @@ describe('Agentic — decision cycle', () => {
     const engine = new AgenticPrescriptionEngine(store, {
       now: fixedNow,
       adaptiveEngine: {
+        evaluateStrategyConstraints: async () => [],
         buildAdaptiveStrategyPlan: async () => ({
           recommendations: [{
             id: 'rec_1', action: 'adjust_content_mix', reason: 'Shift the mix.', priorityScore: 0.8,

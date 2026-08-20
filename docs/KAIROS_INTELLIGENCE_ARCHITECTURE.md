@@ -11,6 +11,108 @@ account-specific intelligence live.
 
 ---
 
+## 0. Architecture Freeze Status
+
+**Status: FROZEN as of 2026-08-20 · Milestones 1–12 complete.**
+
+The audit behind this decision is
+[`ARCHITECTURE_AUDIT_AND_FREEZE.md`](./ARCHITECTURE_AUDIT_AND_FREEZE.md).
+Read it before proposing any change to this layer.
+
+### What frozen means
+
+**No new intelligence-engine concepts before real-world use.** The twelve
+milestones form a coherent system; its remaining problems are all of the
+form *"this correct component is not connected to that correct component."*
+Those are integration problems, and integration is the next phase's work.
+
+| Allowed after freeze | Not allowed after freeze |
+| --- | --- |
+| Bug fixes | New conceptual engines without product evidence |
+| Security and privacy fixes | New domain modules under `src/intelligence/` |
+| Integration gaps (B-1, B-2, H-1…H-4) | Extending the deprecated static prescription module |
+| Performance fixes; storage-adapter migration | A thirteenth milestone of the same kind as 1–12 |
+| Changes driven by real Season 1 or customer evidence | |
+
+The test for any post-freeze change: *does a real customer or a real Season
+result require this?* "It would make the architecture more complete" is not
+a reason.
+
+### Final module boundaries
+
+| Layer | Modules | Answers |
+| --- | --- | --- |
+| Domain vocabulary | `common`, `profiles`, `performance`, `strategy` | What is a profile? |
+| Persistence | `storage` (port + JSONL adapter) | Where does it live? |
+| Evidence intake | `onboarding`, `measurement`, `audience`, `research` | What happened? |
+| Evaluation | `science` | How strong is the evidence? |
+| Cross-context knowledge | `genome` | What holds across contexts? |
+| Applicability | `transfer` | Does that apply here? |
+| Decision | `adaptive` | What next for this profile? |
+| Competition | `battle` | What did a controlled Season prove? |
+| Orchestration | `agentic` | What is permitted, who approves, when does it run? |
+| *Superseded* | `prescription` | *(replaced by `agentic` — do not extend)* |
+
+Dependency direction is one-way: domain types → store port → engines →
+`agentic`. Nothing below `agentic` imports it. The port is type-only, and no
+production file imports the JSONL adapter.
+
+### Product architecture
+
+```
+SOCIAL MONEY LAB        customer-facing product (separate repository)
+        |
+CUSTOMER WORKSPACE      tenant boundary — see audit finding B-1
+        |
+AGENTIC PRESCRIPTION    this layer's entry point
+        |
+INTELLIGENCE ENGINE     Milestones 1-11
+        |
+CREATOROS               third-party execution infrastructure
+        |
+SOCIAL PLATFORMS
+        |
+MEASUREMENTS RETURN ->  back up the stack
+```
+
+**The CreatorOS boundary.** CreatorOS is not owned by this product. This
+layer duplicates none of it — no publishing, scheduling, OAuth, analytics
+retrieval, messaging, webhooks or provisioning. The entire coupling is two
+read-only imports of `client/platformMatrix.js` for the `Platform` union.
+The intelligence layer prepares a `CreatorOsExecutionHandoff`; CreatorOS
+performs the act.
+
+**The Social Money Lab boundary.** Kairos is the MIT-licensed open-source
+foundation and is never customer-facing. Internal names
+(`GenomePattern`, `ScienceEngine`, `kairos/intelligence/*.jsonl`) stay as
+they are. The customer product must not expose the Kairos or CreatorOS name
+in its UI, routes or documents. The recommendation is that Social Money Lab
+live in a **separate repository** consuming this layer as a versioned
+package — see audit §39.
+
+### Known debt at freeze
+
+Two blockers, both product-readiness rather than correctness:
+
+- **B-1** — no tenant boundary below Milestone 12. `workspaceId` exists only
+  on M12 records, and several store queries return every customer's records.
+  Nothing is exposed today because this layer has no HTTP surface. **Must be
+  fixed before anything customer-facing ships.**
+- **B-2** — no consumer. Nothing outside `src/intelligence/` imports this
+  layer. It is a complete, tested, unwired library.
+
+Four high-priority integration gaps: duplicate static/living prescription
+vocabularies (H-1), the Genome unwired from the customer path (H-2), the
+Battle Engine without a consumer (H-3), and the Transfer producer never
+invoked (H-4). Full list, with severities and ordering, in the audit.
+
+### Next phase
+
+**Social Money Lab MVP product build** — tenant boundary first, then the
+service contract in audit §38. Not a thirteenth milestone.
+
+---
+
 ## 1. Purpose of Kairos Intelligence
 
 Kairos began as an agent harness around CreatorOS: a way to drive posting,
