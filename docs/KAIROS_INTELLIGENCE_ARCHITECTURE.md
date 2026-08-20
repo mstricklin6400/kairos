@@ -1748,6 +1748,15 @@ never people**.
 
 ## 24. Social Prescription Engine
 
+> **Status note.** This static, machine-readable prescription was built
+> before the milestone plan was revised. Under the current plan it is not a
+> numbered milestone in its own right: it becomes the foundation for
+> **Milestone 12 — Agentic Social Prescription**, where the prescription
+> becomes persistent, customer-specific agent state for Social Money Lab
+> rather than a generated report. Everything below still holds; M12 extends
+> it.
+
+
 Milestone 11. Turns Kairos intelligence into a curated, evidence-backed
 strategy package for ONE profile — where the commercial promise lands:
 
@@ -1838,120 +1847,206 @@ no content generation — CreatorOS remains the execution layer.
 
 ## 25. Social Genome
 
-Milestone 12. The higher-order map of what Kairos has learned about how
-social performance behaves under different conditions, across:
+Kairos's structured, evidence-backed, **cross-profile** knowledge layer.
+It answers: *what has the system learned across profiles, experiments,
+audiences, platforms, niches, offers, objectives and contexts — and under
+what conditions does that knowledge appear to hold?*
 
-```
-PROFILE x PLATFORM x NICHE x AUDIENCE x OBJECTIVE x OFFER x ACCOUNT STAGE
-  x CONTENT x HOOK x FORMAT x CTA x CADENCE x CONDITIONS x OUTCOME
-```
+### What it is not
 
-It answers: *what tends to work, for whom, where, under what conditions, for
-which objective, and with what evidence?*
+Not a viral-hook list, a best-practices database, a prompt library, a
+content-template library, a leaderboard, a collection of famous marketers, a
+universal strategy system, or an AI-generated advice repository. Not a
+replacement for profile-specific learning, not a way to copy one customer's
+strategy into another, and not a claim that correlation is causation.
 
-### Not a universal best-strategy table
+### Conditional knowledge
 
-The safeguard the whole module is built around:
+The unit of Genome knowledge is never *"Hook X works."* It is:
 
-> BAD: "Question hooks work."
->
-> GOOD: "Question-led hooks are associated with higher reply rates under
-> these observed conditions, with these limitations."
+> "Hook family X has shown positive evidence for objective Y, on platform Z,
+> among profiles with characteristics C, under conditions D, with evidence
+> strength E, while contradictory evidence exists under conditions F."
 
-Every `GenomePattern` is inseparable from its `GenomeContext`. There is no
-field in which a context-free claim can be stored, and **missing dimensions
-stay missing** — an absent context value is unknown, never a wildcard and
-never a default.
+`status: 'supported'` never means universal truth — only that evidence
+**within this pattern's context** cleared a documented operational bar. Every
+pattern carries `caveats` naming what must not be generalized from it.
 
-The same strategy is free to behave differently by objective, platform,
-audience segment and account stage; the Genome records those as separate
-conditional patterns rather than averaging them into one verdict.
+### GenomeContext and context signatures
 
-### No double counting
+`GenomeContext` records conditions across twelve dimensions: platforms,
+niches, sub-niches, audience descriptors, objectives, content formats,
+content pillars, hook families, CTA types, offer types, funnel stages and
+experiment treatments. Every dimension is optional, and **absent means
+unknown, never "all values"** — a pattern observed on Twitter with no niche
+recorded is a claim about Twitter, not about every niche on Twitter.
 
-This is the most important correctness property in the module.
+`contextSignature` produces a deterministic key: normalized by trim,
+lowercase, dedupe and sort, so `['twitter','threads']` and
+`['threads','twitter']` collide by design while `platforms=twitter` and
+`platforms=twitter;niches=bookkeeping` stay distinct.
 
-One experiment produces a measurement. The Science Engine turns it into an
-observation and then a `Finding`. Transfer builds a `TransferAssessment`
-from that finding. A prescription cites the assessment. **That is five
-records and one piece of evidence.** A Genome counting records would report
-five-fold support for a claim resting on a single experiment.
+Normalization is deliberately shallow. It does **not** decide that
+"bookkeeping" and "accounting" mean the same thing — that is semantic
+matching, which §40 forbids and which is exactly how false generalization
+happens. **Prefer under-generalization over false generalization:** two
+records merge only when their signatures are identical.
 
-Every `GenomeEvidence` therefore declares `lineageRoots` — the primitive
-evidence ids it ultimately derives from — and every independent-evidence
-count is computed over the **union of those roots**, never over record
-count. `deduplicateByLineage` uses union-find so transitive chains (A shares
-a root with B, B with C) collapse into one group, keeping the most direct
-record as representative.
+### Evidence and provenance
 
-Confidence, consistency and promotion thresholds all consume the
-deduplicated count, so an echoed experiment cannot manufacture confidence.
+`GenomeEvidenceReference` identifies evidence without embedding it. Evidence
+types span `finding`, `segment_finding`, `experiment`, `hypothesis_evidence`,
+`battle_result`, `transfer_assessment`, `strategy_claim` and `measurement`,
+and source identity is always preserved — a research claim is never mistaken
+for cross-profile validation.
 
-### Evidence graph
+No raw private content and no copyrighted research excerpts are copied in. A
+short neutral summary, identifiers and lineage are the most that travels.
 
-`GenomeNode` and `GenomeEdge` materialize the context dimensions and their
-relationship to the outcome. Every edge names the `patternId` and the
-evidence ids behind it, so any derived relationship traces back to the
-records that justify it. Source class is preserved on every piece of
-evidence.
+### Supporting and contradicting evidence
 
-### Generalization is never automatic
+Every pattern carries both. Evidence can strengthen a pattern, weaken it,
+make it `contested`, or let it decay — and **contradictory evidence is never
+deleted when the conclusion changes**. `findContested()` surfaces exactly
+the patterns the system disagrees with itself about.
 
-Scopes run `profile` → `segment` → `cohort` → `niche` → `platform_niche` →
-`platform` → `cross_niche`.
+### Cross-profile and cross-experiment replication
 
-Patterns are created at the **narrowest** scope, and **nothing is ever
-promoted automatically** — a pattern with strong, consistent, plentiful
-profile-level evidence stays profile-scoped until `promotePattern` is called
-explicitly and the evidence clears the policy bar: enough independent
-evidence, consistent (not mixed) evidence, and for niche scope or wider,
-enough distinct profiles.
+The single most important counting rule:
 
-### Contradictions are preserved
+**100 observations from 1 profile is not 100 observations across 20
+profiles.** `sourceProfileCount` and `sourceExperimentCount` are tracked
+separately, and promotion past `emerging` is gated on them — not on evidence
+volume. A prolific single profile reaches `emerging` at best. Likewise one
+large experiment cannot masquerade as many independent replications.
 
-`GenomeConsistency` is `consistent` / `mixed` / `contradicted` /
-`insufficient`. Genuinely split evidence reads `mixed` and stays that way —
-it is never averaged until the disagreement disappears. A query says so:
-*"Evidence is mixed on N of them — see contradicting evidence."*
-`findContradictions` surfaces exactly those patterns.
+Alongside that, `lineage.ts` deduplicates by `lineageRoots`, so a
+measurement, its experiment, a finding built from it and a transfer derived
+from that finding count as **one** piece of evidence rather than four.
 
-### Query engine
+### Objective specificity
 
-`GenomeQuery` filters by any dimension; `GenomeMatch` returns the pattern
-plus `contextMatch` quality (`exact` / `broader` / `partial` / `unknown`),
-which dimensions matched, which were unspecified, supporting and
-contradicting evidence, freshness, and limitations.
+Mandatory. A pattern that increases `views` is not a pattern that increases
+`leads`, `sales` or `revenue`; high engagement is not high commercial value.
+`objective` is a first-class field, queries filter on it explicitly, and a
+reach-scoped pattern simply does not answer a revenue query. Caveats state
+the boundary in words: *"engagement evidence is not commercial evidence."*
 
-`insufficientEvidence` is a first-class result: when nothing in the Genome
-addresses a question, it says so rather than returning the nearest thing.
+This principle is central to Social Money Lab.
 
-A pattern from another profile's context carries
-`requiresTransferAssessment: true` — the Genome flags the need for a
-transfer judgment rather than making one. **Intelligence Transfer is reused,
-not duplicated**; there is no second similarity engine here.
+### Platform, niche, audience, offer and funnel specificity
 
-### Temporal behavior
+Evidence from `twitter` stays on Twitter; evidence from `bookkeeping` never
+silently becomes all professional services. Single-platform and
+single-niche patterns automatically carry caveats saying cross-platform
+transfer is not established and adjacent niches must not be assumed.
 
-Patterns carry `firstObservedAt`, `lastObservedAt`, `lastValidatedAt`,
-freshness (`current` / `aging` / `stale`) and an optional `platformEra`
-marker. Stale evidence reduces confidence and surfaces through
-`findStalePatterns`, but old evidence remains available — nothing is
-deleted.
+The Genome *can* represent multi-platform replication — a pattern whose
+context lists several platforms has genuinely replicated across them — but
+it never infers that one platform is universally superior. Platform is a
+contextual variable, not a hierarchy.
 
-### Snapshots and reproducibility
+Audience conditionality is aggregate and behavioral only: descriptors like
+`solo-operators`, never individual dossiers and never sensitive traits.
 
-`GenomeSnapshot` captures pattern ids and their confidence at a point in
-time, versioned and never rewritten. That makes "what did the intelligence
-base believe as of version X" a question with a real answer — verified by
-test: confidence changing later does not alter what an earlier snapshot
-recorded.
+### Temporal decay
 
-### Privacy
+`assessGenomeFreshness` reuses the Science Engine's `current` /
+`due_for_revalidation` / `decaying` vocabulary rather than inventing a
+competing model. Stale knowledge is **never deleted** — it is re-statused and
+surfaced by `findStale()` for re-testing.
 
-The Genome is not a people database. It holds aggregate, marketing-relevant
-behavioral relationships; audience appears only as a segment id. No type
-carries a sensitive personal characteristic and there is no per-individual
-record of any kind.
+### Operational confidence
+
+A documented weighted blend, clamped 0..1, **explicitly not a probability**:
+profile replication 0.30, experiment replication 0.20, evidence volume 0.15
+(saturating), directional consistency 0.25 (rescaled so an even split
+contributes nothing), recency 0.10 — then multiplied by a contradiction
+damper so heavily contested evidence cannot score highly however plentiful.
+
+Deliberately **not** an average of source confidences: averaging lets many
+weak, mutually-dependent records inflate a score, which is the exact failure
+this design exists to prevent. Every explanation carries a
+`confidenceCaveat` saying so in words.
+
+### Lifecycle
+
+`emerging` → `promising` → `supported`, with `contested`, `decaying` and
+`deprecated` reachable at any point. Status is re-derived on every
+evaluation and is **not monotonic** — a supported pattern that accumulates
+contradiction or goes stale is re-assigned downward. Contradiction is
+checked *before* promotion, so contradicted evidence can never be called
+supported however much of it there is. `deprecated` patterns remain
+readable.
+
+### Versioning
+
+A material change (status change, or confidence moving 0.05+) increments
+`version`, sets `supersedesPatternId`, and snapshots the prior record to
+history. `getPatternHistory()` returns every retained version, so a
+superseded belief stays inspectable without full event sourcing.
+
+### Privacy and customer isolation
+
+This matters for the future multi-customer product.
+
+`PublicGenomePattern` is a **separate type**, not a filtered view of
+`GenomePattern`. General query results return the public type, which carries
+counts (`sourceProfileCount: 17`) but never profile ids, experiment ids,
+record ids or evidence arrays. Because it is a distinct type, a future field
+carrying customer data cannot leak by omission — it would have to be added
+to the public shape explicitly.
+
+Profile and experiment ids are retained internally because distinct-source
+counting requires them; they never cross the public boundary.
+
+The repository has no formal tenant type yet, and this milestone does not
+invent one. The seam is designed so tenant boundaries can be added cleanly
+later.
+
+### Boundaries
+
+| Layer | Question |
+| --- | --- |
+| **Genome** | What has been learned across contexts? |
+| **Transfer** (§23) | How applicable might this be here? |
+| **Science** (§19) | How strong is the evidence? |
+| **Adaptive Strategy** (§20) | What should we do next? |
+| **Prescription** (§24) | What do we recommend for this business? |
+
+- **vs. ProfileBrain** — ProfileBrain is "what have we learned about THIS
+  profile?"; the Genome is cross-profile conditional knowledge. The Genome is
+  not embedded into ProfileBrain.
+- **vs. Research Intelligence** — research says what external sources
+  *claimed*; the Genome holds what evidence *accumulated*. A marketing
+  article, CreatorOS skill or named practitioner's strategy can seed a
+  hypothesis and nothing more: with no profile or experiment behind it, a
+  claim cannot leave `emerging`.
+- **vs. Battle Engine** — the Genome consumes battle results with their
+  season and protocol provenance, and distinguishes "won a battle" from
+  "replicated as a generalizable strategy." A leaderboard victory is not
+  Genome truth.
+- **vs. Transfer** — the Genome supplies **candidate** knowledge. Every query
+  match carries `requiresTransferAssessment: true`; applicability to a
+  target profile is Transfer's judgment, not the Genome's.
+- **vs. Prescription** — the Genome never outputs "Sarah should post this
+  today." It outputs "Pattern X is supported under contexts resembling
+  Sarah's," and the layers above decide what to do with that.
+
+### Explainability
+
+`explainGenomePattern` returns statement, status and *why that status was
+assigned*, operational confidence with its caveat, known context, unknown
+context dimensions, supporting and contradicting summaries, distinct profile
+and experiment counts, freshness, limitations, caveats, provenance types,
+and an explicit `whatShouldNotBeGeneralized` list — all without exposing a
+single underlying record.
+
+### Deterministic throughout
+
+No LLM, no embeddings, no vector search, no semantic similarity, no web
+search, no scraping. The architecture works before AI interpretation is
+added on top.
 
 ---
 
@@ -2013,8 +2108,8 @@ authority they did not earn. At every boundary the same three rules hold:
 | 8 — Adaptive Strategy Engine | Next-best-action recommendations, exploration/exploitation policy, constraints, content allocation, failure memory, information gain, strategy plans & versioning | Done |
 | 9 — Battle Engine | Seasons, protocols, competitors, divisions, matchups, pre-registration, lab/growth modes, configurable scoring with vanity guard, standings, predictions, milestones, evidence provenance | Done |
 | 10 — Intelligence Transfer | Explainable comparability across 17 dimensions, evidence hierarchy, negative transfer, cold start, hypothesis seeding | Done |
-| 11 — Social Prescription | Nine-section evidence-backed strategy packages, non-collapsing evidence classes, pattern-vs-example separation, objective depth, versioning | Done |
-| **12 — Social Genome** | Conditional evidence map, lineage-aware no-double-counting, explicit generalization, contradiction preservation, query engine, snapshots | **This milestone** |
+| **11 — Social Genome** | Cross-profile conditional knowledge, context signatures, replication-gated lifecycle, contradiction retention, versioning, privacy-preserving queries | **COMPLETE** |
+| 12 — Agentic Social Prescription | Persistent, customer-specific agent state for Social Money Lab — requires a revised specification | Next |
 
 Each milestone is additive and must leave CreatorOS execution untouched.
 

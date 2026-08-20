@@ -49,7 +49,7 @@ import type {
 } from '../battle/types.js';
 import type { PeerCohort, TransferAssessment } from '../transfer/types.js';
 import type { SocialPrescription } from '../prescription/types.js';
-import type { GenomeEdge, GenomeEvidence, GenomeNode, GenomePattern, GenomeSnapshot } from '../genome/types.js';
+import type { GenomePattern } from '../genome/types.js';
 import type {
   AdaptiveStrategyPlanQuery,
   AttributionEventQuery,
@@ -872,48 +872,19 @@ export class JsonlIntelligenceStore implements IntelligenceStore {
 
   async listGenomePatterns(query: GenomePatternQuery): Promise<GenomePattern[]> {
     let all = await readLatestByKey<GenomePattern>(genomePath(this.workspaceRoot, 'patterns'), (p) => p.id);
-    if (query.scopeLevel) all = all.filter((p) => p.scopeLevel === query.scopeLevel);
-    if (query.profileId) all = all.filter((p) => p.profileId === query.profileId);
+    if (query.status) all = all.filter((p) => p.status === query.status);
+    if (query.contextSignature) all = all.filter((p) => p.contextSignature === query.contextSignature);
     all.sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1));
     return all.slice(0, query.limit ?? 500);
   }
 
-  async saveGenomeEvidence(evidence: GenomeEvidence): Promise<void> {
-    await appendLine(genomePath(this.workspaceRoot, 'evidence'), evidence);
+  async saveGenomePatternHistory(pattern: GenomePattern): Promise<void> {
+    await appendLine(genomePath(this.workspaceRoot, 'pattern-history'), pattern);
   }
 
-  async getGenomeEvidence(id: string): Promise<GenomeEvidence | null> {
-    const all = await readLatestByKey<GenomeEvidence>(genomePath(this.workspaceRoot, 'evidence'), (e) => e.id);
-    return all.find((e) => e.id === id) ?? null;
-  }
-
-  async saveGenomeNode(node: GenomeNode): Promise<void> {
-    await appendLine(genomePath(this.workspaceRoot, 'nodes'), node);
-  }
-
-  async listGenomeNodes(): Promise<GenomeNode[]> {
-    return readLatestByKey<GenomeNode>(genomePath(this.workspaceRoot, 'nodes'), (n) => n.id);
-  }
-
-  async saveGenomeEdge(edge: GenomeEdge): Promise<void> {
-    await appendLine(genomePath(this.workspaceRoot, 'edges'), edge);
-  }
-
-  async listGenomeEdges(): Promise<GenomeEdge[]> {
-    return readLatestByKey<GenomeEdge>(genomePath(this.workspaceRoot, 'edges'), (e) => e.id);
-  }
-
-  async saveGenomeSnapshot(snapshot: GenomeSnapshot): Promise<void> {
-    await appendLine(genomePath(this.workspaceRoot, 'snapshots'), snapshot);
-  }
-
-  async getGenomeSnapshot(id: string): Promise<GenomeSnapshot | null> {
-    const all = await readLatestByKey<GenomeSnapshot>(genomePath(this.workspaceRoot, 'snapshots'), (s) => s.id);
-    return all.find((s) => s.id === id) ?? null;
-  }
-
-  async listGenomeSnapshots(): Promise<GenomeSnapshot[]> {
-    const all = await readLatestByKey<GenomeSnapshot>(genomePath(this.workspaceRoot, 'snapshots'), (s) => s.id);
-    return all.sort((a, b) => a.version - b.version);
+  async listGenomePatternHistory(patternId: string): Promise<GenomePattern[]> {
+    const all = await readLatestByKey<GenomePattern>(genomePath(this.workspaceRoot, 'pattern-history'), (p) => p.id);
+    // History ids are `${patternId}@v${version}`.
+    return all.filter((p) => p.id.startsWith(`${patternId}@v`));
   }
 }

@@ -1,42 +1,49 @@
 /**
- * The Social Genome Engine — Milestone 12.
+ * The Social Genome Engine.
  *
- * Builds and queries the conditional evidence map. Supplies structured
- * intelligence to consumers (notably Social Prescription); it does not
- * create prescriptions, and it reuses Intelligence Transfer rather than
- * inventing a second similarity engine.
+ * Builds, evaluates, queries and explains cross-profile conditional
+ * knowledge. It does NOT generate content, schedule posts, create
+ * prescriptions, execute CreatorOS actions, or decide whether knowledge
+ * applies to a particular profile — that last one is the Transfer Engine's
+ * job (Milestone 10) and is deliberately not duplicated here.
  *
- * Depends only on the `IntelligenceStore` port. No LLM, no publishing.
+ * Deterministic throughout: no LLM, no embeddings, no vector search, no
+ * semantic matching. Two records only merge into one pattern when their
+ * normalized context signatures are identical.
+ *
+ * Depends only on the `IntelligenceStore` port.
  */
 import { randomUUID } from 'node:crypto';
-import type { IsoDateTime } from '../common/types.js';
-import type { AnalysisLimitation, Finding } from '../science/types.js';
+import type { GrowthObjective, IsoDateTime } from '../common/types.js';
 import type { IntelligenceStore } from '../storage/store.js';
-import type { SegmentFinding } from '../audience/types.js';
-import type { TransferAssessment } from '../transfer/types.js';
 import {
-  assessFreshness,
-  computeGenomeConfidence,
-  countIndependentEvidence,
-  deduplicateByLineage,
-  deriveEvidenceLimitations,
-} from './lineage.js';
+  assessGenomeFreshness,
+  computeOperationalConfidence,
+  deriveCaveats,
+  deriveGenomeLimitations,
+  determineStatus,
+  provenanceTypes,
+  summarizeEvidence,
+} from './aggregate.js';
+import {
+  contextCovers,
+  contextSignature,
+  mergeContexts,
+  normalizeContext,
+  unknownDimensions,
+  type GenomeContext,
+} from './context.js';
 import {
   DEFAULT_GENOME_POLICY,
-  type ContextMatchQuality,
-  type GenomeContext,
-  type GenomeEdge,
-  type GenomeEvidence,
-  type GenomeMatch,
-  type GenomeNode,
-  type GenomeOutcome,
+  type GenomeEvidenceReference,
   type GenomePattern,
+  type GenomePatternExplanation,
+  type GenomePatternStatus,
   type GenomePolicy,
   type GenomeQuery,
+  type GenomeQueryMatch,
   type GenomeQueryResult,
-  type GenomeScopeLevel,
-  type GenomeSnapshot,
-  type SocialGenome,
+  type PublicGenomePattern,
 } from './types.js';
 
 export interface GenomeEngineOptions {
@@ -44,16 +51,36 @@ export interface GenomeEngineOptions {
   readonly now?: () => IsoDateTime;
 }
 
-/** Scope ordering, narrowest → broadest. Promotion only ever moves rightward, and only explicitly. */
-const SCOPE_ORDER: readonly GenomeScopeLevel[] = [
-  'profile',
-  'segment',
-  'cohort',
-  'niche',
-  'platform_niche',
-  'platform',
-  'cross_niche',
-];
+/**
+ * Strips a pattern to its public face.
+ *
+ * The privacy seam. `PublicGenomePattern` is a separate type rather than a
+ * filtered view, so a future field carrying customer data cannot leak by
+ * omission — it would have to be added here explicitly. Evidence arrays,
+ * record ids, profile ids and experiment ids never cross this boundary.
+ */
+export function toPublicPattern(pattern: GenomePattern): PublicGenomePattern {
+  return {
+    id: pattern.id,
+    statement: pattern.statement,
+    status: pattern.status,
+    context: pattern.context,
+    contextSignature: pattern.contextSignature,
+    objective: pattern.objective,
+    confidence: pattern.confidence,
+    evidenceSummary: pattern.evidenceSummary,
+    sourceProfileCount: pattern.sourceProfileCount,
+    sourceExperimentCount: pattern.sourceExperimentCount,
+    firstObservedAt: pattern.firstObservedAt,
+    lastObservedAt: pattern.lastObservedAt,
+    lastEvaluatedAt: pattern.lastEvaluatedAt,
+    freshness: pattern.freshness,
+    limitations: pattern.limitations,
+    caveats: pattern.caveats,
+    statusRationale: pattern.statusRationale,
+    version: pattern.version,
+  };
+}
 
 export class SocialGenomeEngine {
   private readonly policy: GenomePolicy;
@@ -71,440 +98,283 @@ export class SocialGenomeEngine {
     return this.policy;
   }
 
-  // ---- Evidence construction -------------------------------------------
-
   /**
-   * Wraps a `Finding` as genome evidence. Its lineage roots are the
-   * experiments that produced it — so anything else derived from those same
-   * experiments will collapse onto it rather than counting again.
-   */
-  evidenceFromFinding(finding: Finding): GenomeEvidence {
-    return {
-      id: `gev_${randomUUID()}`,
-      sourceClass: 'first_party',
-      recordType: 'finding',
-      recordId: finding.id,
-      lineageRoots: finding.sourceExperimentIds.length > 0 ? finding.sourceExperimentIds : [`finding:${finding.id}`],
-      supports: finding.status === 'validated' || finding.status === 'promising',
-      confidence: finding.confidence,
-      sampleSize: finding.sampleSize,
-      observedAt: finding.observationWindow?.to ?? finding.createdAt,
-      lastValidatedAt: finding.lastValidatedAt,
-      limitations: finding.limitations ?? [],
-    };
-  }
-
-  /** Wraps a `SegmentFinding`, rooted in its supporting experiments. */
-  evidenceFromSegmentFinding(segmentFinding: SegmentFinding): GenomeEvidence {
-    return {
-      id: `gev_${randomUUID()}`,
-      sourceClass: 'first_party',
-      recordType: 'segment_finding',
-      recordId: segmentFinding.id,
-      lineageRoots:
-        segmentFinding.supportingExperimentIds.length > 0
-          ? segmentFinding.supportingExperimentIds
-          : [`segment_finding:${segmentFinding.id}`],
-      supports: segmentFinding.status === 'supported',
-      confidence: segmentFinding.confidence,
-      observedAt: segmentFinding.createdAt,
-      lastValidatedAt: segmentFinding.lastValidatedAt ?? segmentFinding.updatedAt,
-      limitations: [],
-    };
-  }
-
-  /**
-   * Wraps a `TransferAssessment`.
+   * Creates or updates a pattern from evidence.
    *
-   * Critically, its lineage root is the ORIGINATING finding's experiments —
-   * not the assessment id — so a transfer built from a finding already in
-   * the Genome adds no new independent evidence. `sourceFindingExperimentIds`
-   * lets the caller supply that lineage; without it the finding id itself is
-   * the root, which still collapses with the finding's own evidence record.
-   */
-  evidenceFromTransfer(
-    assessment: TransferAssessment,
-    sourceFindingExperimentIds: readonly string[] = [],
-  ): GenomeEvidence {
-    return {
-      id: `gev_${randomUUID()}`,
-      sourceClass: assessment.sourceClass,
-      recordType: 'transfer_assessment',
-      recordId: assessment.id,
-      lineageRoots:
-        sourceFindingExperimentIds.length > 0 ? sourceFindingExperimentIds : [`finding:${assessment.findingId}`],
-      supports: assessment.relevance !== 'contraindicated' && assessment.relevance !== 'irrelevant',
-      confidence: assessment.assessmentConfidence,
-      observedAt: assessment.createdAt,
-      lastValidatedAt: assessment.createdAt,
-      limitations: assessment.limitations,
-      battleProvenance: assessment.battleProvenance,
-    };
-  }
-
-  // ---- Pattern construction --------------------------------------------
-
-  /**
-   * Creates or updates a pattern.
+   * Two records are only ever combined into one pattern when their
+   * normalized context signatures match exactly and the objective agrees.
+   * There is no fuzzy merging — §11's rule is that under-generalization
+   * beats false generalization.
    *
-   * Confidence and consistency are computed over lineage-deduplicated
-   * evidence, and the pattern is always created at the narrowest scope the
-   * caller specifies — defaulting to `profile`. Widening requires
-   * `promotePattern`.
+   * The version increments and `supersedesPatternId` chains to the prior
+   * record whenever the status or confidence materially changes, so the
+   * reasoning behind an earlier belief survives it being replaced.
    */
   async upsertPattern(input: {
     readonly id?: string;
     readonly statement: string;
     readonly context: GenomeContext;
-    readonly outcome: GenomeOutcome;
-    readonly scopeLevel?: GenomeScopeLevel;
-    readonly profileId?: string;
-    readonly supporting: readonly GenomeEvidence[];
-    readonly contradicting?: readonly GenomeEvidence[];
-    readonly platformEra?: string;
+    readonly objective?: GrowthObjective;
+    readonly supportingEvidence: readonly GenomeEvidenceReference[];
+    readonly contradictingEvidence?: readonly GenomeEvidenceReference[];
+    readonly caveats?: readonly string[];
   }): Promise<GenomePattern> {
     const now = this.now();
-    const contradicting = input.contradicting ?? [];
-
-    // Deduplicate before anything is counted.
-    const supporting = deduplicateByLineage(input.supporting);
-    const contra = deduplicateByLineage(contradicting);
-
-    for (const evidence of [...supporting, ...contra]) {
-      await this.store.saveGenomeEvidence(evidence);
-    }
-
-    const allEvidence = [...supporting, ...contra];
-    const timestamps = allEvidence
-      .map((e) => e.observedAt)
-      .filter((t): t is string => t !== undefined)
-      .sort();
-    const validations = allEvidence
-      .map((e) => e.lastValidatedAt)
-      .filter((t): t is string => t !== undefined)
-      .sort();
-    const lastValidatedAt = validations[validations.length - 1];
+    const context = normalizeContext(input.context);
+    const signature = contextSignature(context);
+    const supporting = input.supportingEvidence;
+    const contradicting = input.contradictingEvidence ?? [];
 
     const existing = input.id ? await this.store.getGenomePattern(input.id) : null;
+
+    const summary = summarizeEvidence(supporting, contradicting);
+    const observedTimes = [...supporting, ...contradicting]
+      .map((e) => e.observedAt ?? e.recordedAt)
+      .filter((t): t is string => t !== undefined)
+      .sort();
+    const firstObservedAt = existing?.firstObservedAt ?? observedTimes[0] ?? now;
+    const lastObservedAt = observedTimes[observedTimes.length - 1] ?? now;
+
+    const freshness = assessGenomeFreshness(lastObservedAt, now, this.policy);
+    const confidence = computeOperationalConfidence({ summary, freshness, policy: this.policy });
+    const { status, rationale } = determineStatus({
+      summary,
+      freshness,
+      policy: this.policy,
+      currentStatus: existing?.status,
+    });
+
+    // A material change is a status change or a confidence move of 0.05+.
+    const materiallyChanged =
+      existing !== null && (existing.status !== status || Math.abs(existing.confidence - confidence) >= 0.05);
+
+    const derivedCaveats = deriveCaveats({
+      summary,
+      platforms: context.platforms as readonly string[] | undefined,
+      niches: context.niches as readonly string[] | undefined,
+      objectives: input.objective ? [input.objective] : (context.objectives as readonly string[] | undefined),
+      audienceDescriptors: context.audienceDescriptors,
+      offerTypes: context.offerTypes,
+    });
 
     const pattern: GenomePattern = {
       id: existing?.id ?? input.id ?? `gpat_${randomUUID()}`,
       statement: input.statement,
-      context: input.context,
-      outcome: input.outcome,
-      // Narrowest by default. Never inferred from how good the evidence looks.
-      scopeLevel: input.scopeLevel ?? existing?.scopeLevel ?? 'profile',
-      profileId: input.profileId ?? existing?.profileId,
-      supportingEvidenceIds: supporting.map((e) => e.id),
-      contradictingEvidenceIds: contra.map((e) => e.id),
-      confidence: computeGenomeConfidence({
-        supporting,
-        contradicting: contra,
-        lastValidatedAt,
-        now,
-        policy: this.policy,
-      }),
-      firstObservedAt: existing?.firstObservedAt ?? timestamps[0] ?? now,
-      lastObservedAt: timestamps[timestamps.length - 1] ?? now,
-      lastValidatedAt,
-      platformEra: input.platformEra ?? existing?.platformEra,
-      limitations: deriveEvidenceLimitations(allEvidence, this.policy),
+      status,
+      context,
+      contextSignature: signature,
+      objective: input.objective ?? existing?.objective,
+      confidence,
+      evidenceSummary: summary,
+      supportingEvidence: supporting,
+      contradictingEvidence: contradicting,
+      sourceProfileCount: summary.distinctProfileCount,
+      sourceExperimentCount: summary.distinctExperimentCount,
+      firstObservedAt,
+      lastObservedAt,
+      lastEvaluatedAt: now,
+      freshness,
+      limitations: deriveGenomeLimitations(supporting, contradicting, summary, this.policy),
+      caveats: [...new Set([...(input.caveats ?? []), ...derivedCaveats])],
+      statusRationale: rationale,
+      version: existing ? existing.version + (materiallyChanged ? 1 : 0) : 1,
+      supersedesPatternId: materiallyChanged ? existing?.id : existing?.supersedesPatternId,
       createdAt: existing?.createdAt ?? now,
       updatedAt: now,
-      schemaVersion: 1,
+      schemaVersion: 2,
     };
+
+    // Snapshot the prior version before overwriting, so history stays
+    // inspectable without full event sourcing.
+    if (existing && materiallyChanged) {
+      await this.store.saveGenomePatternHistory({
+        ...existing,
+        id: `${existing.id}@v${existing.version}`,
+      });
+    }
 
     await this.store.saveGenomePattern(pattern);
     return pattern;
   }
 
+  /** Re-evaluates a pattern against current policy and freshness, without new evidence. */
+  async evaluatePattern(patternId: string): Promise<GenomePattern | null> {
+    const pattern = await this.store.getGenomePattern(patternId);
+    if (!pattern) return null;
+    return this.upsertPattern({
+      id: pattern.id,
+      statement: pattern.statement,
+      context: pattern.context,
+      objective: pattern.objective,
+      supportingEvidence: pattern.supportingEvidence,
+      contradictingEvidence: pattern.contradictingEvidence,
+      caveats: pattern.caveats,
+    });
+  }
+
   /**
-   * Widens a pattern's scope — explicitly, and only when the evidence
-   * justifies it.
-   *
-   * Refuses when independent evidence is below policy, when moving to niche
-   * scope or wider without enough distinct profiles, or when the evidence is
-   * not consistent. **Nothing is ever promoted automatically**: a pattern
-   * with beautiful profile-level evidence stays profile-scoped until someone
-   * asks for the promotion and the evidence clears the bar.
+   * Explicitly retires a pattern. The record is retained and remains
+   * readable — deprecation is a judgment, not a deletion.
    */
-  async promotePattern(input: {
-    readonly patternId: string;
-    readonly targetScope: GenomeScopeLevel;
-    /** Distinct profiles the evidence spans — the caller must establish this. */
-    readonly distinctProfileCount: number;
-  }): Promise<{ ok: true; pattern: GenomePattern } | { ok: false; reason: string }> {
-    const pattern = await this.store.getGenomePattern(input.patternId);
-    if (!pattern) return { ok: false, reason: `No pattern found with id "${input.patternId}".` };
-
-    if (SCOPE_ORDER.indexOf(input.targetScope) <= SCOPE_ORDER.indexOf(pattern.scopeLevel)) {
-      return { ok: false, reason: 'Target scope is not broader than the current scope.' };
-    }
-
-    if (pattern.confidence.independentEvidenceCount < this.policy.minimumIndependentEvidenceForPromotion) {
-      return {
-        ok: false,
-        reason: `Promotion needs at least ${this.policy.minimumIndependentEvidenceForPromotion} independent pieces of evidence; this pattern has ${pattern.confidence.independentEvidenceCount}.`,
-      };
-    }
-
-    if (pattern.confidence.consistency !== 'consistent') {
-      return {
-        ok: false,
-        reason: `Evidence is ${pattern.confidence.consistency}; only consistent evidence may be generalized.`,
-      };
-    }
-
-    const needsMultiProfile: readonly GenomeScopeLevel[] = ['niche', 'platform_niche', 'platform', 'cross_niche'];
-    if (needsMultiProfile.includes(input.targetScope) && input.distinctProfileCount < this.policy.minimumProfilesForNicheScope) {
-      return {
-        ok: false,
-        reason: `Scope "${input.targetScope}" needs evidence from at least ${this.policy.minimumProfilesForNicheScope} distinct profiles; only ${input.distinctProfileCount} supplied.`,
-      };
-    }
-
-    const promoted: GenomePattern = { ...pattern, scopeLevel: input.targetScope, updatedAt: this.now() };
-    await this.store.saveGenomePattern(promoted);
-    return { ok: true, pattern: promoted };
-  }
-
-  // ---- Graph ------------------------------------------------------------
-
-  /** Materializes the context dimensions of a pattern as graph nodes and edges. */
-  async buildGraphForPattern(pattern: GenomePattern): Promise<{ nodes: GenomeNode[]; edges: GenomeEdge[] }> {
-    const nodes: GenomeNode[] = [];
-    const push = (kind: GenomeNode['kind'], value?: string): GenomeNode | undefined => {
-      if (!value) return undefined;
-      const node: GenomeNode = { id: `gnode_${kind}:${value}`, kind, value };
-      nodes.push(node);
-      return node;
+  async deprecatePattern(patternId: string, reason: string): Promise<GenomePattern | null> {
+    const pattern = await this.store.getGenomePattern(patternId);
+    if (!pattern) return null;
+    const deprecated: GenomePattern = {
+      ...pattern,
+      status: 'deprecated',
+      statusRationale: `Explicitly deprecated: ${reason}`,
+      version: pattern.version + 1,
+      supersedesPatternId: pattern.id,
+      lastEvaluatedAt: this.now(),
+      updatedAt: this.now(),
     };
-
-    push('platform', pattern.context.platform);
-    push('niche', pattern.context.niche);
-    push('audience_segment', pattern.context.audienceSegmentId);
-    push('objective', pattern.context.objective);
-    push('account_stage', pattern.context.accountStage);
-    push('hook_family', pattern.context.hookFamily);
-    push('content_format', pattern.context.contentFormat);
-    push('cta', pattern.context.ctaType);
-    push('topic', pattern.context.topic);
-    const outcomeNode = push('outcome', `${pattern.outcome.metric}:${pattern.outcome.direction}`);
-
-    const edges: GenomeEdge[] = [];
-    if (outcomeNode) {
-      for (const node of nodes) {
-        if (node.id === outcomeNode.id) continue;
-        edges.push({
-          id: `gedge_${randomUUID()}`,
-          fromNodeId: node.id,
-          toNodeId: outcomeNode.id,
-          relation: pattern.contradictingEvidenceIds.length > 0 ? 'contradicted_by' : 'associated_with',
-          patternId: pattern.id,
-          evidenceIds: [...pattern.supportingEvidenceIds, ...pattern.contradictingEvidenceIds],
-        });
-      }
-    }
-
-    for (const node of nodes) await this.store.saveGenomeNode(node);
-    for (const edge of edges) await this.store.saveGenomeEdge(edge);
-    return { nodes, edges };
+    await this.store.saveGenomePatternHistory({ ...pattern, id: `${pattern.id}@v${pattern.version}` });
+    await this.store.saveGenomePattern(deprecated);
+    return deprecated;
   }
 
-  // ---- Query ------------------------------------------------------------
-
-  /** How closely a pattern's context matches the query's specified dimensions. */
-  private matchContext(
-    pattern: GenomePattern,
-    query: GenomeQuery,
-  ): { quality: ContextMatchQuality; matched: string[]; unspecified: string[] } {
-    const checks: Array<[string, unknown, unknown]> = [
-      ['platform', query.platform, pattern.context.platform],
-      ['niche', query.niche, pattern.context.niche],
-      ['subNiche', query.subNiche, pattern.context.subNiche],
-      ['audienceSegmentId', query.audienceSegmentId, pattern.context.audienceSegmentId],
-      ['objective', query.objective, pattern.context.objective],
-      ['accountStage', query.accountStage, pattern.context.accountStage],
-      ['hookFamily', query.hookFamily, pattern.context.hookFamily],
-      ['contentFormat', query.contentFormat, pattern.context.contentFormat],
-    ];
-
-    const matched: string[] = [];
-    const unspecified: string[] = [];
-    let mismatched = 0;
-    let asked = 0;
-
-    for (const [name, wanted, actual] of checks) {
-      if (wanted === undefined) continue;
-      asked += 1;
-      if (actual === undefined) {
-        // The pattern doesn't record this dimension — unknown, not a match.
-        unspecified.push(name);
-      } else if (actual === wanted) {
-        matched.push(name);
-      } else {
-        mismatched += 1;
-      }
-    }
-
-    if (asked === 0) return { quality: 'broader', matched, unspecified };
-    if (mismatched > 0) return { quality: 'partial', matched, unspecified };
-    if (unspecified.length > 0 && matched.length === 0) return { quality: 'unknown', matched, unspecified };
-    if (unspecified.length > 0) return { quality: 'broader', matched, unspecified };
-    return { quality: 'exact', matched, unspecified };
+  /** Every retained prior version of a pattern, oldest first. */
+  async getPatternHistory(patternId: string): Promise<GenomePattern[]> {
+    const history = await this.store.listGenomePatternHistory(patternId);
+    return [...history].sort((a, b) => a.version - b.version);
   }
 
   /**
-   * Queries the Genome.
+   * Queries for CANDIDATE knowledge.
    *
-   * Returns matching patterns with their context-match quality, the evidence
-   * behind them, what contradicts them, freshness, and limitations — plus an
-   * honest `insufficientEvidence` flag when nothing addresses the question.
+   * Results are public-safe and every match carries
+   * `requiresTransferAssessment: true` — the Genome answers "what has been
+   * learned", never "what applies here".
    */
   async query(query: GenomeQuery): Promise<GenomeQueryResult> {
     const now = this.now();
     const all = await this.store.listGenomePatterns({});
-    const matches: GenomeMatch[] = [];
 
+    const required: GenomeContext = {
+      ...(query.platform ? { platforms: [query.platform as never] } : {}),
+      ...(query.niche ? { niches: [query.niche] } : {}),
+      ...(query.objective ? { objectives: [query.objective] } : {}),
+      ...(query.hookFamily ? { hookFamilies: [query.hookFamily] } : {}),
+      ...(query.contentFormat ? { contentFormats: [query.contentFormat as never] } : {}),
+      ...(query.audienceDescriptor ? { audienceDescriptors: [query.audienceDescriptor] } : {}),
+      ...(query.offerType ? { offerTypes: [query.offerType] } : {}),
+      ...(query.funnelStage ? { funnelStages: [query.funnelStage] } : {}),
+    };
+
+    const matches: GenomeQueryMatch[] = [];
     for (const pattern of all) {
-      if (query.scopeLevel && pattern.scopeLevel !== query.scopeLevel) continue;
-      if (query.profileId && pattern.profileId !== query.profileId) continue;
-      if (query.metric && pattern.outcome.metric !== query.metric) continue;
-      if (query.consistentOnly && pattern.confidence.consistency !== 'consistent') continue;
+      if (query.status && pattern.status !== query.status) continue;
+      if (query.freshness && pattern.freshness !== query.freshness) continue;
+      if (query.minimumConfidence !== undefined && pattern.confidence < query.minimumConfidence) continue;
+      if (query.observedSince && pattern.lastObservedAt < query.observedSince) continue;
+      // Objective is checked explicitly as well as via context: a reach
+      // pattern must never answer a revenue question.
+      if (query.objective && pattern.objective && pattern.objective !== query.objective) continue;
 
-      const { quality, matched, unspecified } = this.matchContext(pattern, query);
-      // A pattern whose relevant dimensions actively conflict is not an answer.
-      if (quality === 'partial' && matched.length === 0) continue;
-
-      const supportingEvidence = await this.loadEvidence(pattern.supportingEvidenceIds);
-      const contradictingEvidence = await this.loadEvidence(pattern.contradictingEvidenceIds);
+      const { matched, unmatched, unspecified } = contextCovers(pattern.context, required);
+      // A pattern that actively conflicts on a queried dimension is not an answer.
+      if (unmatched.length > 0) continue;
+      // With filters supplied, require at least one positive dimension match.
+      const askedForContext = Object.keys(required).length > 0;
+      if (askedForContext && matched.length === 0) continue;
 
       matches.push({
-        pattern,
-        contextMatch: quality,
+        pattern: toPublicPattern(pattern),
         matchedDimensions: matched,
+        unmatchedDimensions: unmatched,
         unspecifiedDimensions: unspecified,
-        supportingEvidence,
-        contradictingEvidence,
-        limitations: pattern.limitations,
-        freshness: assessFreshness(pattern.lastValidatedAt, now, this.policy),
-        // Evidence from a different profile/context needs a transfer
-        // assessment before it is applied — the Genome does not re-implement
-        // that judgment, it flags the need for it.
-        requiresTransferAssessment:
-          pattern.scopeLevel === 'profile' && query.profileId !== undefined && pattern.profileId !== query.profileId,
+        requiresTransferAssessment: true,
       });
     }
 
-    matches.sort((a, b) => {
-      const rank: Record<ContextMatchQuality, number> = { exact: 4, broader: 3, partial: 2, unknown: 1 };
-      if (rank[a.contextMatch] !== rank[b.contextMatch]) return rank[b.contextMatch] - rank[a.contextMatch];
-      return b.pattern.confidence.score - a.pattern.confidence.score;
-    });
+    matches.sort((a, b) =>
+      b.matchedDimensions.length !== a.matchedDimensions.length
+        ? b.matchedDimensions.length - a.matchedDimensions.length
+        : b.pattern.confidence - a.pattern.confidence,
+    );
 
     const limited = matches.slice(0, query.limit ?? 50);
-    const insufficientEvidence = limited.length === 0;
-    const mixed = limited.filter((m) => m.pattern.confidence.consistency === 'mixed');
-
     return {
       query,
       matches: limited,
-      insufficientEvidence,
-      summary: insufficientEvidence
-        ? 'No evidence in the Genome addresses this question.'
-        : mixed.length > 0
-          ? `${limited.length} pattern(s) found. Evidence is mixed on ${mixed.length} of them — see contradicting evidence.`
-          : `${limited.length} pattern(s) found under the stated conditions.`,
-      limitations: insufficientEvidence ? ['small_sample'] : [...new Set(limited.flatMap((m) => m.limitations))],
+      insufficientEvidence: limited.length === 0,
+      summary:
+        limited.length === 0
+          ? 'No Genome knowledge addresses these conditions. This is an open question, not a negative result.'
+          : `${limited.length} candidate pattern(s) learned under related conditions. Applicability to any specific profile requires a transfer assessment.`,
       evaluatedAt: now,
     };
   }
 
-  private async loadEvidence(ids: readonly string[]): Promise<GenomeEvidence[]> {
-    const loaded: GenomeEvidence[] = [];
-    for (const id of ids) {
-      const evidence = await this.store.getGenomeEvidence(id);
-      if (evidence) loaded.push(evidence);
-    }
-    return loaded;
-  }
-
-  /** Patterns whose evidence disagrees — "where is evidence contradictory?" */
-  async findContradictions(): Promise<GenomePattern[]> {
-    const all = await this.store.listGenomePatterns({});
-    return all.filter((p) => p.confidence.consistency === 'mixed' || p.confidence.consistency === 'contradicted');
-  }
-
-  /** Patterns whose evidence has gone stale and should be re-tested. */
-  async findStalePatterns(): Promise<GenomePattern[]> {
-    const now = this.now();
-    const all = await this.store.listGenomePatterns({});
-    return all.filter((p) => assessFreshness(p.lastValidatedAt, now, this.policy) === 'stale');
-  }
-
-  // ---- Snapshots and versioning ----------------------------------------
-
   /**
-   * Captures what the intelligence base believes right now.
+   * The full "why does the system believe this?" answer.
    *
-   * Answers "what did Kairos believe as of version X" — snapshots are never
-   * rewritten, so a historical answer stays historical.
+   * Evidence appears as counts, types and summaries — never as raw records,
+   * so an explanation is safe to surface without exposing another
+   * customer's data.
    */
-  async takeSnapshot(note?: string): Promise<GenomeSnapshot> {
-    const patterns = await this.store.listGenomePatterns({});
-    const previous = await this.store.listGenomeSnapshots();
-    const version = previous.reduce((max, s) => Math.max(max, s.version), 0) + 1;
+  async explainGenomePattern(patternId: string): Promise<GenomePatternExplanation | null> {
+    const pattern = await this.store.getGenomePattern(patternId);
+    if (!pattern) return null;
 
-    const patternConfidence: Record<string, number> = {};
-    for (const pattern of patterns) patternConfidence[pattern.id] = pattern.confidence.score;
-
-    const snapshot: GenomeSnapshot = {
-      id: `gsnap_${randomUUID()}`,
-      version,
-      takenAt: this.now(),
-      patternIds: patterns.map((p) => p.id),
-      patternConfidence,
-      patternCount: patterns.length,
-      note,
-      policyVersion: this.policy.policyVersion,
-      schemaVersion: 1,
+    return {
+      patternId: pattern.id,
+      statement: pattern.statement,
+      status: pattern.status,
+      statusRationale: pattern.statusRationale,
+      operationalConfidence: pattern.confidence,
+      confidenceCaveat:
+        'Operational confidence is a documented weighted heuristic over replication, consistency, volume and recency. It is NOT a statistical probability.',
+      knownContext: pattern.context,
+      unknownContextDimensions: unknownDimensions(pattern.context),
+      supportingEvidenceSummary: `${pattern.evidenceSummary.supportingCount} independent supporting piece(s) across ${pattern.sourceProfileCount} profile(s) and ${pattern.sourceExperimentCount} experiment(s).`,
+      contradictingEvidenceSummary:
+        pattern.evidenceSummary.contradictingCount === 0
+          ? 'No contradicting evidence recorded.'
+          : `${pattern.evidenceSummary.contradictingCount} independent contradicting piece(s) (${(pattern.evidenceSummary.contradictionRatio * 100).toFixed(0)}% of all evidence).`,
+      distinctProfileCount: pattern.sourceProfileCount,
+      distinctExperimentCount: pattern.sourceExperimentCount,
+      freshness: pattern.freshness,
+      firstObservedAt: pattern.firstObservedAt,
+      lastObservedAt: pattern.lastObservedAt,
+      limitations: pattern.limitations,
+      caveats: pattern.caveats,
+      provenance: provenanceTypes(pattern.supportingEvidence, pattern.contradictingEvidence),
+      whatShouldNotBeGeneralized: pattern.caveats,
     };
-    await this.store.saveGenomeSnapshot(snapshot);
-    return snapshot;
   }
 
-  /** Summary of the Genome as it currently stands. */
-  async describe(): Promise<SocialGenome> {
-    const patterns = await this.store.listGenomePatterns({});
-    const nodes = await this.store.listGenomeNodes();
-    const edges = await this.store.listGenomeEdges();
-    const snapshots = await this.store.listGenomeSnapshots();
-    return {
-      version: snapshots.reduce((max, s) => Math.max(max, s.version), 0),
-      patternCount: patterns.length,
-      nodeCount: nodes.length,
-      edgeCount: edges.length,
-      lastUpdatedAt: patterns.reduce<string>((latest, p) => (p.updatedAt > latest ? p.updatedAt : latest), ''),
-      policyVersion: this.policy.policyVersion,
-    };
+  /** Patterns whose evidence disagrees with itself. Negative knowledge is knowledge. */
+  async findContested(): Promise<PublicGenomePattern[]> {
+    const all = await this.store.listGenomePatterns({});
+    return all.filter((p) => p.status === 'contested').map(toPublicPattern);
+  }
+
+  /** Patterns due for revalidation or already decaying. Nothing is deleted. */
+  async findStale(): Promise<PublicGenomePattern[]> {
+    const all = await this.store.listGenomePatterns({});
+    return all
+      .filter((p) => p.freshness === 'decaying' || p.freshness === 'due_for_revalidation')
+      .map(toPublicPattern);
   }
 
   /**
-   * Total independent evidence behind a pattern — the double-counting-safe
-   * answer to "how much do we actually have?"
+   * Merges the contexts of two patterns the caller has established describe
+   * the same knowledge — the mechanism by which cross-platform or
+   * cross-niche replication gets recorded. Never decides on its own that
+   * two patterns belong together.
    */
-  async countPatternEvidence(patternId: string): Promise<number> {
-    const pattern = await this.store.getGenomePattern(patternId);
-    if (!pattern) return 0;
-    const evidence = await this.loadEvidence([
-      ...pattern.supportingEvidenceIds,
-      ...pattern.contradictingEvidenceIds,
-    ]);
-    return countIndependentEvidence(evidence);
+  mergePatternContexts(a: GenomePattern, b: GenomePattern): GenomeContext {
+    return mergeContexts(a.context, b.context);
   }
 
-  /** Limitations across a set of patterns, for a consumer assembling a view. */
-  summarizeLimitations(patterns: readonly GenomePattern[]): AnalysisLimitation[] {
-    return [...new Set(patterns.flatMap((p) => p.limitations))];
+  /** Status counts across the Genome, for a future internal dashboard. */
+  async summarize(): Promise<Record<GenomePatternStatus, number>> {
+    const all = await this.store.listGenomePatterns({});
+    const counts: Record<GenomePatternStatus, number> = {
+      emerging: 0, promising: 0, supported: 0, contested: 0, decaying: 0, deprecated: 0,
+    };
+    for (const pattern of all) counts[pattern.status] += 1;
+    return counts;
   }
 }

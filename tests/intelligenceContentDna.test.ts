@@ -354,7 +354,23 @@ describe('Content DNA — unblocks the Transfer contentFormat dimension', () => 
 });
 
 describe('Content DNA — Genome patterns key on the real hook family', () => {
-  it('lets a genome pattern be built with a real hook family in context', async () => {
+  /** Genome evidence derived from a finding, with lineage back to its experiments. */
+  function genomeEvidence(source: Finding) {
+    return {
+      id: `gev_${source.id}`,
+      evidenceType: 'finding' as const,
+      recordId: source.id,
+      direction: 'supporting' as const,
+      profileId: source.profileId,
+      experimentId: source.sourceExperimentIds[0],
+      lineageRoots: source.sourceExperimentIds,
+      recordedAt: NOW,
+      observedAt: NOW,
+      limitations: source.limitations ?? [],
+    };
+  }
+
+  it('carries a real hook family and content format into genome context', async () => {
     const store = await tmpStore();
     const { SocialGenomeEngine } = await import('../src/intelligence/genome/engine.js');
     const engine = new SocialGenomeEngine(store, { now: fixedNow });
@@ -362,14 +378,17 @@ describe('Content DNA — Genome patterns key on the real hook family', () => {
     const pattern = await engine.upsertPattern({
       statement: 'Question-led hooks were associated with higher replies under these conditions.',
       context: {
-        platform: source.platform, niche: source.niche, objective: source.objective,
-        hookFamily: source.hookFamily, contentFormat: source.contentFormat,
+        platforms: [source.platform!],
+        niches: [source.niche!],
+        objectives: [source.objective!],
+        hookFamilies: [source.hookFamily!],
+        contentFormats: [source.contentFormat!],
       },
-      outcome: { metric: 'replies', direction: 'increase' },
-      supporting: [engine.evidenceFromFinding(source)],
+      objective: source.objective,
+      supportingEvidence: [genomeEvidence(source)],
     });
-    expect(pattern.context.hookFamily).toBe('question-led');
-    expect(pattern.context.contentFormat).toBe('text');
+    expect(pattern.context.hookFamilies).toEqual(['question-led']);
+    expect(pattern.context.contentFormats).toEqual(['text']);
   });
 
   it('makes hook family queryable in the genome', async () => {
@@ -378,12 +397,28 @@ describe('Content DNA — Genome patterns key on the real hook family', () => {
     const engine = new SocialGenomeEngine(store, { now: fixedNow });
     await engine.upsertPattern({
       statement: 'x',
-      context: { platform: 'threads', hookFamily: 'question-led' },
-      outcome: { metric: 'replies', direction: 'increase' },
-      supporting: [engine.evidenceFromFinding(finding('prof_1', { hookFamily: 'question-led' }))],
+      context: { platforms: ['threads'], hookFamilies: ['question-led'] },
+      objective: 'conversation',
+      supportingEvidence: [genomeEvidence(finding('prof_1', { hookFamily: 'question-led' }))],
     });
     const result = await engine.query({ hookFamily: 'question-led' });
     expect(result.insufficientEvidence).toBe(false);
-    expect(result.matches[0]!.contextMatch).toBe('exact');
+    expect(result.matches[0]!.matchedDimensions).toContain('hookFamilies');
+  });
+
+  it('keys the pattern context signature on the hook family', async () => {
+    const store = await tmpStore();
+    const { SocialGenomeEngine } = await import('../src/intelligence/genome/engine.js');
+    const { contextSignature } = await import('../src/intelligence/genome/context.js');
+    const engine = new SocialGenomeEngine(store, { now: fixedNow });
+    const pattern = await engine.upsertPattern({
+      statement: 'x',
+      context: { platforms: ['threads'], hookFamilies: ['question-led'] },
+      objective: 'conversation',
+      supportingEvidence: [genomeEvidence(finding('prof_1', { hookFamily: 'question-led' }))],
+    });
+    expect(pattern.contextSignature).toBe(
+      contextSignature({ platforms: ['threads'], hookFamilies: ['question-led'] }),
+    );
   });
 });

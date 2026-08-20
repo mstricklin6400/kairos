@@ -228,26 +228,20 @@ export type {
 export { DEFAULT_PRESCRIPTION_POLICY } from './prescription/types.js';
 
 export type {
-  ContextMatchQuality,
-  GenomeConfidence,
-  GenomeConsistency,
+  EvidenceDirection,
   GenomeContext,
-  GenomeEdge,
-  GenomeEvidence,
+  GenomeEvidenceReference,
+  GenomeEvidenceSummary,
+  GenomeEvidenceType,
   GenomeFreshness,
-  GenomeMatch,
-  GenomeNode,
-  GenomeNodeKind,
-  GenomeOutcome,
-  GenomeOutcomeDirection,
   GenomePattern,
+  GenomePatternExplanation,
+  GenomePatternStatus,
   GenomePolicy,
   GenomeQuery,
+  GenomeQueryMatch,
   GenomeQueryResult,
-  GenomeScopeLevel,
-  GenomeSnapshot,
-  GenomeVersion,
-  SocialGenome,
+  PublicGenomePattern,
 } from './genome/types.js';
 
 export { DEFAULT_GENOME_POLICY } from './genome/types.js';

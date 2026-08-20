@@ -242,14 +242,7 @@ import type {
 } from '../battle/types.js';
 import type { PeerCohort, TransferAssessment, TransferRelevance } from '../transfer/types.js';
 import type { SocialPrescription } from '../prescription/types.js';
-import type {
-  GenomeEdge,
-  GenomeEvidence,
-  GenomeNode,
-  GenomePattern,
-  GenomeScopeLevel,
-  GenomeSnapshot,
-} from '../genome/types.js';
+import type { GenomePattern, GenomePatternStatus } from '../genome/types.js';
 
 export interface ProfileQuery {
   readonly platform?: Platform;
@@ -425,8 +418,8 @@ export interface SocialPrescriptionQuery {
 }
 
 export interface GenomePatternQuery {
-  readonly scopeLevel?: GenomeScopeLevel;
-  readonly profileId?: string;
+  readonly status?: GenomePatternStatus;
+  readonly contextSignature?: string;
   readonly limit?: number;
 }
 
@@ -613,25 +606,14 @@ export interface IntelligenceStore {
   getSocialPrescription(id: string): Promise<SocialPrescription | null>;
   listSocialPrescriptions(query: SocialPrescriptionQuery): Promise<SocialPrescription[]>;
 
-  // ---- Social Genome (Milestone 12) ----
+  // ---- Social Genome (Milestone 11) ----
 
-  /** Upsert by id. Inseparable from its context; scope never widens on its own. */
+  /** Upsert by id. A pattern is inseparable from its context; status is never promoted on its own. */
   saveGenomePattern(pattern: GenomePattern): Promise<void>;
   getGenomePattern(id: string): Promise<GenomePattern | null>;
   listGenomePatterns(query: GenomePatternQuery): Promise<GenomePattern[]>;
 
-  /** Carries `lineageRoots`; all counting is done over roots, never records. */
-  saveGenomeEvidence(evidence: GenomeEvidence): Promise<void>;
-  getGenomeEvidence(id: string): Promise<GenomeEvidence | null>;
-
-  saveGenomeNode(node: GenomeNode): Promise<void>;
-  listGenomeNodes(): Promise<GenomeNode[]>;
-
-  saveGenomeEdge(edge: GenomeEdge): Promise<void>;
-  listGenomeEdges(): Promise<GenomeEdge[]>;
-
-  /** Point-in-time belief capture. Never rewritten. */
-  saveGenomeSnapshot(snapshot: GenomeSnapshot): Promise<void>;
-  getGenomeSnapshot(id: string): Promise<GenomeSnapshot | null>;
-  listGenomeSnapshots(): Promise<GenomeSnapshot[]>;
+  /** Prior versions, retained so a superseded belief stays inspectable. */
+  saveGenomePatternHistory(pattern: GenomePattern): Promise<void>;
+  listGenomePatternHistory(patternId: string): Promise<GenomePattern[]>;
 }

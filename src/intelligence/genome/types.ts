@@ -1,331 +1,319 @@
 /**
- * Social Genome Foundation — Milestone 12.
+ * The Social Genome — Kairos's structured, evidence-backed, cross-profile
+ * knowledge layer.
  *
- * A structured, evidence-backed map of relationships among:
+ * It answers: *what has the system learned across profiles, experiments,
+ * audiences, platforms, niches, offers, objectives and contexts — and under
+ * what conditions does that knowledge appear to hold?*
  *
- *   PROFILE × PLATFORM × NICHE × AUDIENCE × OBJECTIVE × OFFER ×
- *   ACCOUNT STAGE × CONTENT × HOOK × FORMAT × CTA × CADENCE ×
- *   EXPERIMENTAL CONDITIONS × OUTCOME
- *
- * It answers: *what tends to work, for whom, where, under what conditions,
- * for which objective, and with what evidence?*
- *
- * THE SAFEGUARD THIS MODULE IS BUILT AROUND
+ * WHAT IT IS NOT
  * ------------------------------------------------------------------------
- * **The Genome is not a universal "best strategy" table.** Conditionality is
- * preserved everywhere:
+ * Not a viral-hook list, best-practice database, prompt library, template
+ * collection, leaderboard, or universal strategy system. Not a way to copy
+ * one customer's strategy into another. Not a claim that correlation is
+ * causation.
  *
- *   BAD:  "Question hooks work."
- *   GOOD: "Question-led hooks are associated with higher reply rates under
- *          these observed conditions, with these limitations."
- *
- * Every `GenomePattern` is inseparable from its `GenomeContext`. There is no
- * way to express a context-free claim in this model.
- *
- * NO DOUBLE COUNTING
+ * THE CONDITIONALITY RULE
  * ------------------------------------------------------------------------
- * The same underlying evidence surfaces through several derived layers — a
- * raw measurement, an experiment observation, a finding built from it, and
- * a transfer assessment built from that finding are FOUR records but ONE
- * piece of evidence. Every `GenomeEvidence` therefore declares its
- * `lineageRoots`, and independent-evidence counts are computed over the
- * union of those roots rather than over record count. See `lineage.ts`.
+ * The unit of Genome knowledge is never "Hook X works." It is:
  *
- * PRIVACY
+ *   "Hook family X has shown positive evidence for objective Y, on platform
+ *    Z, among profiles with characteristics C, under conditions D, with
+ *    evidence strength E, while contradictory evidence exists under
+ *    conditions F."
+ *
+ * A `GenomePattern` cannot exist without its `GenomeContext`, and
+ * `status: 'supported'` never means universal truth — only that the
+ * evidence within that context has cleared a documented operational bar.
+ *
+ * BOUNDARIES
  * ------------------------------------------------------------------------
- * The Genome is not a people database. It holds aggregate, marketing-relevant
- * behavioral relationships. No type here carries a sensitive personal
- * characteristic, and there is no per-individual record of any kind.
+ *   GENOME    "What has been learned across contexts?"
+ *   TRANSFER  "How applicable might this be here?"        (Milestone 10)
+ *   SCIENCE   "How strong is the evidence?"               (Milestone 7)
+ *   ADAPTIVE  "What should we do next?"                   (Milestone 8)
+ *   PRESCRIPTION "What do we recommend for this business?" (Milestone 12)
+ *
+ * The Genome supplies CANDIDATE knowledge. It never outputs "Sarah should
+ * post this today", and it never decides applicability to a target profile.
  */
-import type {
-  AccountStage,
-  Confidence,
-  ContentFormat,
-  GrowthObjective,
-  HookFamily,
-  IsoDateTime,
-  Platform,
-} from '../common/types.js';
-import type { PerformanceMetric } from '../performance/types.js';
+import type { Confidence, GrowthObjective, IsoDateTime } from '../common/types.js';
 import type { AnalysisLimitation } from '../science/types.js';
-import type { EvidenceSourceClass } from '../transfer/types.js';
-import type { BattleEvidenceReference } from '../battle/types.js';
+import type { GenomeContext } from './context.js';
+
+export type { GenomeContext } from './context.js';
 
 /**
- * The conditions a pattern was observed under. Every field is optional and
- * **missing data stays missing** — an absent dimension is unknown, never a
- * wildcard and never a default. A context with only `platform` set is a
- * claim about that platform and nothing else.
+ * Where a piece of Genome evidence came from. Preserves source identity so
+ * a research claim is never mistaken for cross-profile validation.
  */
-export interface GenomeContext {
-  readonly platform?: Platform;
-  readonly niche?: string;
-  readonly subNiche?: string;
-  readonly audienceSegmentId?: string;
-  readonly objective?: GrowthObjective;
-  readonly offerType?: string;
-  readonly businessModel?: string;
-  readonly accountStage?: AccountStage;
-  readonly contentPillarId?: string;
-  readonly topic?: string;
-  readonly contentFormat?: ContentFormat;
-  readonly hookFamily?: HookFamily;
-  readonly ctaType?: string;
-  readonly cadence?: string;
-  readonly experimentTreatment?: string;
-}
+export type GenomeEvidenceType =
+  | 'finding'
+  | 'segment_finding'
+  | 'experiment'
+  | 'hypothesis_evidence'
+  | 'battle_result'
+  | 'transfer_assessment'
+  | 'strategy_claim'
+  | 'measurement';
 
-/** What kind of thing a node represents in the evidence graph. */
-export type GenomeNodeKind =
-  | 'platform'
-  | 'niche'
-  | 'audience_segment'
-  | 'objective'
-  | 'offer_type'
-  | 'account_stage'
-  | 'content_pillar'
-  | 'topic'
-  | 'content_format'
-  | 'hook_family'
-  | 'cta'
-  | 'cadence'
-  | 'treatment'
-  | 'metric'
-  | 'outcome';
-
-/** One dimension value in the graph. */
-export interface GenomeNode {
-  readonly id: string;
-  readonly kind: GenomeNodeKind;
-  readonly value: string;
-  readonly label?: string;
-}
-
-/** How strongly and in which direction an outcome moved. */
-export type GenomeOutcomeDirection = 'increase' | 'decrease' | 'no_change' | 'mixed';
-
-/** The measured result a pattern is about. */
-export interface GenomeOutcome {
-  readonly metric: PerformanceMetric;
-  readonly direction: GenomeOutcomeDirection;
-  /** Relative change where computable. Absent rather than zero when undefined. */
-  readonly relativeChange?: number;
-}
+/** Which way a piece of evidence points relative to the pattern's claim. */
+export type EvidenceDirection = 'supporting' | 'contradicting';
 
 /**
- * A directed relationship between two nodes, carrying the evidence that
- * justifies it. Edges make the graph traversable; patterns make it
- * interpretable.
- */
-export interface GenomeEdge {
-  readonly id: string;
-  readonly fromNodeId: string;
-  readonly toNodeId: string;
-  readonly relation: 'observed_with' | 'associated_with' | 'contradicted_by';
-  readonly patternId: string;
-  readonly evidenceIds: readonly string[];
-}
-
-/**
- * One piece of evidence behind a pattern, with the lineage needed to avoid
- * double counting.
+ * A reference to evidence, carrying enough lineage to audit why a pattern
+ * exists — WITHOUT embedding the private record itself.
  *
- * `lineageRoots` names the PRIMITIVE evidence this record ultimately derives
- * from — normally experiment ids, or measurement ids where no experiment
- * exists. A finding built from `exp_1`, and a transfer assessment built from
- * that finding, both carry `lineageRoots: ['exp_1']`, so together they count
- * as one piece of evidence, not two.
+ * This is the privacy seam. `profileId` and `experimentId` are retained for
+ * internal aggregation (distinct-source counting needs them) but are never
+ * surfaced through the public query path — see `PublicGenomePattern`.
+ * Copyrighted research excerpts and raw customer content are never copied
+ * here; a short neutral `summary` and identifiers are the most that travels.
  */
-export interface GenomeEvidence {
+export interface GenomeEvidenceReference {
   readonly id: string;
-  readonly sourceClass: EvidenceSourceClass;
-  readonly recordType: 'finding' | 'segment_finding' | 'experiment' | 'measurement' | 'transfer_assessment' | 'research_claim';
+  readonly evidenceType: GenomeEvidenceType;
+  /** Id of the underlying record in its own store. */
   readonly recordId: string;
-  /** The primitive evidence ids this derives from. The basis of all deduplication. */
+  readonly direction: EvidenceDirection;
+  /** Internal only — used for distinct-profile replication counting, never exposed publicly. */
+  readonly profileId?: string;
+  /** Internal only — used for distinct-experiment replication counting. */
+  readonly experimentId?: string;
+  /**
+   * Primitive evidence ids this derives from, so a measurement, the
+   * experiment it belongs to, the finding built from it and a transfer
+   * derived from that finding count as ONE piece of evidence rather than
+   * four. See `lineage.ts`.
+   */
   readonly lineageRoots: readonly string[];
-  readonly supports: boolean;
-  readonly confidence?: Confidence;
-  readonly sampleSize?: number;
+  /** A short, neutral description. Never raw private content or copyrighted text. */
+  readonly summary?: string;
   readonly observedAt?: IsoDateTime;
-  readonly lastValidatedAt?: IsoDateTime;
+  readonly recordedAt: IsoDateTime;
   readonly limitations: readonly AnalysisLimitation[];
-  /** Retained in full when the evidence came from a battle. */
-  readonly battleProvenance?: BattleEvidenceReference;
+  /** Battle provenance, when the evidence came from a competition. */
+  readonly battleSeasonId?: string;
+  readonly battleProtocolVersion?: string;
 }
 
 /**
- * The scope a pattern is currently claimed at. Evidence is **never
- * automatically promoted** up this ladder — widening a claim requires
- * explicit justification against `GenomePolicy`, via
- * `SocialGenomeEngine.promotePattern`.
+ * A pattern's lifecycle standing.
+ *
+ * `supported` is the strongest state and still does NOT mean universal
+ * truth — it means the evidence within this pattern's context cleared the
+ * policy bar. `contested` is a first-class outcome, not a failure state:
+ * substantial contradictory evidence is a real finding about the world.
+ * Neither `decaying` nor `deprecated` deletes anything.
  */
-export type GenomeScopeLevel =
-  | 'profile'
-  | 'segment'
-  | 'cohort'
-  | 'niche'
-  | 'platform_niche'
-  | 'platform'
-  | 'cross_niche';
+export type GenomePatternStatus =
+  | 'emerging'
+  | 'promising'
+  | 'supported'
+  | 'contested'
+  | 'decaying'
+  | 'deprecated';
 
-/** Whether the evidence for a pattern agrees with itself. */
-export type GenomeConsistency = 'consistent' | 'mixed' | 'contradicted' | 'insufficient';
-
-/** How fresh a pattern's evidence is. */
-export type GenomeFreshness = 'current' | 'aging' | 'stale';
+/** How fresh a pattern's evidence is. Reuses the Science Engine's vocabulary. */
+export type GenomeFreshness = 'current' | 'due_for_revalidation' | 'decaying';
 
 /**
- * Operational confidence in a pattern. Deliberately decomposed rather than a
- * single opaque number, and explicitly not a statistical probability.
+ * The counted, decomposed evidence picture behind a pattern. Exposed rather
+ * than folded into one number so any judgment can be re-derived.
  */
-export interface GenomeConfidence {
-  readonly score: Confidence;
-  /** Distinct lineage roots behind the pattern — NOT the record count. */
-  readonly independentEvidenceCount: number;
+export interface GenomeEvidenceSummary {
+  /** Independent supporting evidence, deduplicated by lineage. */
   readonly supportingCount: number;
   readonly contradictingCount: number;
-  readonly consistency: GenomeConsistency;
-  readonly freshness: GenomeFreshness;
-  readonly rationale: string;
+  /** Distinct profiles contributing evidence. Cross-profile replication is the strongest signal here. */
+  readonly distinctProfileCount: number;
+  /** Distinct experiments contributing evidence — one big experiment is not many replications. */
+  readonly distinctExperimentCount: number;
+  /** Share of evidence pointing the same way, 0..1. */
+  readonly directionalConsistency: number;
+  /** Contradicting / total, 0..1. */
+  readonly contradictionRatio: number;
+  readonly evidenceTypes: readonly GenomeEvidenceType[];
 }
 
 /**
- * A conditional relationship: this outcome, under these conditions, with
- * this evidence.
+ * One conditional pattern.
  *
- * The pattern statement and its `context` are inseparable — reading the
- * statement without the context is reading it wrong, and there is no field
- * in which a context-free version of the claim can be stored.
+ * `objective` is a first-class field, not merely context: §15 makes
+ * objective specificity mandatory. A pattern supported for `reach` is NOT
+ * a pattern supported for `revenue`, and the model refuses to let those be
+ * the same record.
  */
 export interface GenomePattern {
   readonly id: string;
   /** Conservative and conditional. Never "X works". */
   readonly statement: string;
+  readonly status: GenomePatternStatus;
   readonly context: GenomeContext;
-  readonly outcome: GenomeOutcome;
-  readonly scopeLevel: GenomeScopeLevel;
-  /** The profile this was observed on, when scope is profile-level. */
-  readonly profileId?: string;
-  readonly supportingEvidenceIds: readonly string[];
-  readonly contradictingEvidenceIds: readonly string[];
-  readonly confidence: GenomeConfidence;
+  /** Deterministic, order-independent key for this pattern's conditions. */
+  readonly contextSignature: string;
+  /** The objective this pattern is about. Kept explicit — see §15. */
+  readonly objective?: GrowthObjective;
+  /** Operational confidence, 0..1. NOT a probability — see `aggregate.ts`. */
+  readonly confidence: Confidence;
+  readonly evidenceSummary: GenomeEvidenceSummary;
+  readonly supportingEvidence: readonly GenomeEvidenceReference[];
+  readonly contradictingEvidence: readonly GenomeEvidenceReference[];
+  readonly sourceProfileCount: number;
+  readonly sourceExperimentCount: number;
   readonly firstObservedAt: IsoDateTime;
   readonly lastObservedAt: IsoDateTime;
-  readonly lastValidatedAt?: IsoDateTime;
-  /** Free-text marker for the platform era the evidence belongs to, e.g. an algorithm change. */
-  readonly platformEra?: string;
+  readonly lastEvaluatedAt: IsoDateTime;
+  readonly freshness: GenomeFreshness;
   readonly limitations: readonly AnalysisLimitation[];
+  /** Free-text caveats beyond the structured limitation vocabulary. */
+  readonly caveats: readonly string[];
+  /** Why the current status was assigned, composed deterministically. */
+  readonly statusRationale: string;
+  readonly version: number;
+  /** The pattern version this replaced. Earlier versions are retained. */
+  readonly supersedesPatternId?: string;
   readonly createdAt: IsoDateTime;
   readonly updatedAt: IsoDateTime;
   readonly schemaVersion: number;
 }
 
-/** A query against the Genome. Every filter is optional; omitted means unconstrained. */
-export interface GenomeQuery {
-  readonly platform?: Platform;
-  readonly niche?: string;
-  readonly subNiche?: string;
-  readonly audienceSegmentId?: string;
+/**
+ * The public face of a pattern — what a general query returns.
+ *
+ * Deliberately a DIFFERENT type from `GenomePattern`, not a filtered view of
+ * it, so cross-customer leakage is a compile error rather than a review
+ * oversight. Evidence appears only as counts and types; no `profileId`,
+ * `experimentId`, `recordId` or evidence summary text crosses this boundary.
+ *
+ * A caller learns `sourceProfileCount: 17` and never which seventeen.
+ */
+export interface PublicGenomePattern {
+  readonly id: string;
+  readonly statement: string;
+  readonly status: GenomePatternStatus;
+  readonly context: GenomeContext;
+  readonly contextSignature: string;
   readonly objective?: GrowthObjective;
-  readonly accountStage?: AccountStage;
-  readonly hookFamily?: HookFamily;
-  readonly contentFormat?: ContentFormat;
-  readonly metric?: PerformanceMetric;
-  readonly scopeLevel?: GenomeScopeLevel;
-  readonly profileId?: string;
-  /** Only return patterns whose evidence agrees. */
-  readonly consistentOnly?: boolean;
+  readonly confidence: Confidence;
+  readonly evidenceSummary: GenomeEvidenceSummary;
+  readonly sourceProfileCount: number;
+  readonly sourceExperimentCount: number;
+  readonly firstObservedAt: IsoDateTime;
+  readonly lastObservedAt: IsoDateTime;
+  readonly lastEvaluatedAt: IsoDateTime;
+  readonly freshness: GenomeFreshness;
+  readonly limitations: readonly AnalysisLimitation[];
+  readonly caveats: readonly string[];
+  readonly statusRationale: string;
+  readonly version: number;
+}
+
+/** A query for candidate knowledge. Every filter optional. */
+export interface GenomeQuery {
+  readonly platform?: string;
+  readonly niche?: string;
+  readonly objective?: GrowthObjective;
+  readonly hookFamily?: string;
+  readonly contentFormat?: string;
+  readonly audienceDescriptor?: string;
+  readonly offerType?: string;
+  readonly funnelStage?: string;
+  readonly status?: GenomePatternStatus;
+  readonly minimumConfidence?: number;
+  /** Only patterns observed at or after this timestamp. */
+  readonly observedSince?: IsoDateTime;
+  readonly freshness?: GenomeFreshness;
   readonly limit?: number;
 }
 
-/** How well a pattern's context matched the query. */
-export type ContextMatchQuality = 'exact' | 'partial' | 'broader' | 'unknown';
-
 /**
- * One query result. Carries not just the pattern but how well it matched,
- * which dimensions were unspecified, and what the evidence disagrees about.
+ * One candidate result. **Candidate knowledge, not a prescription** — the
+ * Transfer Engine decides applicability to any particular profile, and
+ * `requiresTransferAssessment` says so on every result.
  */
-export interface GenomeMatch {
-  readonly pattern: GenomePattern;
-  readonly contextMatch: ContextMatchQuality;
+export interface GenomeQueryMatch {
+  readonly pattern: PublicGenomePattern;
   readonly matchedDimensions: readonly string[];
+  readonly unmatchedDimensions: readonly string[];
+  /** Dimensions the pattern does not record — unknown, never assumed to match. */
   readonly unspecifiedDimensions: readonly string[];
-  readonly supportingEvidence: readonly GenomeEvidence[];
-  readonly contradictingEvidence: readonly GenomeEvidence[];
-  readonly limitations: readonly AnalysisLimitation[];
-  readonly freshness: GenomeFreshness;
-  /** Set when the pattern comes from a different context and would need transfer assessment. */
-  readonly requiresTransferAssessment: boolean;
+  /** Always true. The Genome never asserts applicability to a target profile. */
+  readonly requiresTransferAssessment: true;
 }
 
-/** The answer to a query, including the honest "we don't know" case. */
 export interface GenomeQueryResult {
   readonly query: GenomeQuery;
-  readonly matches: readonly GenomeMatch[];
-  /** True when nothing in the Genome addresses the question. */
+  readonly matches: readonly GenomeQueryMatch[];
   readonly insufficientEvidence: boolean;
   readonly summary: string;
-  readonly limitations: readonly AnalysisLimitation[];
   readonly evaluatedAt: IsoDateTime;
 }
 
+/** The full "why does the system believe this?" answer. */
+export interface GenomePatternExplanation {
+  readonly patternId: string;
+  readonly statement: string;
+  readonly status: GenomePatternStatus;
+  readonly statusRationale: string;
+  readonly operationalConfidence: Confidence;
+  /** Stated plainly so nobody reads the number as a probability. */
+  readonly confidenceCaveat: string;
+  readonly knownContext: GenomeContext;
+  readonly unknownContextDimensions: readonly string[];
+  readonly supportingEvidenceSummary: string;
+  readonly contradictingEvidenceSummary: string;
+  readonly distinctProfileCount: number;
+  readonly distinctExperimentCount: number;
+  readonly freshness: GenomeFreshness;
+  readonly firstObservedAt: IsoDateTime;
+  readonly lastObservedAt: IsoDateTime;
+  readonly limitations: readonly AnalysisLimitation[];
+  readonly caveats: readonly string[];
+  /** Evidence types behind the pattern, without exposing which records. */
+  readonly provenance: readonly GenomeEvidenceType[];
+  readonly whatShouldNotBeGeneralized: readonly string[];
+}
+
 /**
- * A point-in-time capture of what the intelligence base believed.
+ * Configurable thresholds.
  *
- * Answers "what did Kairos believe as of version X" — and the Genome never
- * silently rewrites history, so an old snapshot stays interpretable against
- * the policy version that produced it.
+ * **These are operational starting points, not scientific laws.** They
+ * encode a deliberately conservative stance: cross-profile replication is
+ * what earns promotion, and a single prolific profile cannot promote a
+ * pattern on its own.
  */
-export interface GenomeSnapshot {
-  readonly id: string;
-  readonly version: number;
-  readonly takenAt: IsoDateTime;
-  readonly patternIds: readonly string[];
-  /** Pattern id → the confidence it held at snapshot time. */
-  readonly patternConfidence: Readonly<Record<string, number>>;
-  readonly patternCount: number;
-  readonly note?: string;
-  readonly policyVersion: string;
-  readonly schemaVersion: number;
-}
-
-/** Configurable thresholds. Operational assumptions, not measured facts. */
 export interface GenomePolicy {
-  /** Distinct lineage roots required before a pattern may be promoted beyond profile scope. */
-  readonly minimumIndependentEvidenceForPromotion: number;
-  /** Distinct profiles required before a pattern may claim niche scope or wider. */
-  readonly minimumProfilesForNicheScope: number;
-  /** Share of supporting evidence at or above which a pattern reads `consistent`. */
-  readonly consistencyThreshold: number;
-  readonly agingDays: number;
-  readonly staleDays: number;
+  /** Independent evidence needed before a pattern exists at all. */
+  readonly minimumEvidenceForEmerging: number;
+  readonly minimumProfilesForPromising: number;
+  readonly minimumProfilesForSupported: number;
+  readonly minimumExperimentsForSupported: number;
+  /** Share of evidence that must point the same way for `supported`, 0..1. */
+  readonly minimumDirectionalConsistency: number;
+  /** Contradiction ratio at or above which a pattern is `contested`, 0..1. */
+  readonly contestedContradictionRatio: number;
+  readonly decayAfterDays: number;
+  readonly revalidationAfterDays: number;
   readonly policyVersion: string;
 }
 
+/**
+ * Conservative defaults.
+ *
+ * `minimumProfilesForSupported: 3` and `minimumExperimentsForSupported: 3`
+ * together encode the core stance: three independent profiles and three
+ * independent experiments before anything is called supported. One profile
+ * with a hundred observations reaches `emerging` at best.
+ */
 export const DEFAULT_GENOME_POLICY: GenomePolicy = {
-  minimumIndependentEvidenceForPromotion: 3,
-  minimumProfilesForNicheScope: 3,
-  consistencyThreshold: 0.75,
-  agingDays: 90,
-  staleDays: 180,
-  policyVersion: 'genome-v1',
+  minimumEvidenceForEmerging: 1,
+  minimumProfilesForPromising: 2,
+  minimumProfilesForSupported: 3,
+  minimumExperimentsForSupported: 3,
+  minimumDirectionalConsistency: 0.7,
+  contestedContradictionRatio: 0.35,
+  decayAfterDays: 180,
+  revalidationAfterDays: 90,
+  policyVersion: 'genome-v2',
 };
-
-/** The Genome as a whole — a versioned collection of patterns and their graph. */
-export interface SocialGenome {
-  readonly version: number;
-  readonly patternCount: number;
-  readonly nodeCount: number;
-  readonly edgeCount: number;
-  readonly lastUpdatedAt: IsoDateTime;
-  readonly policyVersion: string;
-}
-
-/** The version metadata carried on a genome build. */
-export interface GenomeVersion {
-  readonly version: number;
-  readonly builtAt: IsoDateTime;
-  readonly patternsAdded: readonly string[];
-  readonly patternsUpdated: readonly string[];
-  readonly policyVersion: string;
-}
