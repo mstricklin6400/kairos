@@ -1329,7 +1329,9 @@ fields.
 added the onboarding adapter. Milestone 4 added the audience stores.
 Milestone 5 added the research stores. Milestone 6 added the
 measurement/attribution stores. Milestone 7 added the hypothesis-evidence
-store. Milestone 8 added the recommendation and strategy-plan stores.**
+store. Milestone 8 added the recommendation and strategy-plan stores.
+Milestone 9 added the battle stores. Milestone 10 added the
+transfer-assessment and peer-cohort stores.**
 
 ---
 
@@ -1584,7 +1586,144 @@ never themselves findings.
 
 ---
 
-## 23. Development Milestones
+## 23. Intelligence Transfer Engine
+
+Milestone 10. Answers one question: *evidence exists that something worked
+somewhere else — how relevant is it to THIS profile?*
+
+### Transfer is not truth
+
+**A finding from another account, battle, niche, audience or platform can
+never become a validated first-party finding for the receiving profile.**
+
+Transferred intelligence may influence prioritization, seed hypotheses,
+suggest experiments, improve cold-start strategy and reduce wasted
+exploration. It may not masquerade as first-party validation.
+
+This is structural, not conventional: the transfer module never writes a
+`Finding`. Its strongest output is a `Hypothesis` at `proposed` with
+`source: 'research'` and confidence capped at 0.3 — which the Science Engine
+must then validate on the receiving profile's own evidence.
+
+### Relevance verdicts
+
+`directly_applicable` · `strongly_relevant` · `moderately_relevant` ·
+`weakly_relevant` · `hypothesis_only` · `irrelevant` · `contraindicated` ·
+`insufficiently_comparable`
+
+Three of these are distinct in an important way. `irrelevant` means the
+evidence does not apply. `contraindicated` means it argues *against* acting
+here — typically because the receiving profile's own evidence contradicts
+it. `insufficiently_comparable` means Kairos cannot tell, which is neither.
+
+### Explainable similarity — no opaque score
+
+Seventeen dimensions are compared individually: platform, niche, sub-niche,
+audience, audience behavior, business model, offer type, objective, account
+stage, account size, content format, posting capacity, voice/positioning,
+geography, experimental conditions, measurement quality and evidence
+freshness.
+
+Each yields a `TransferDimension` carrying the comparison outcome, both
+values, its weight, its contribution and a plain-language note. There is
+deliberately no bare "similarity = 0.87": the number is always
+reconstructible from the breakdown that produced it.
+
+Comparison is exact and deterministic — no embeddings, no fuzzy matching.
+Account stage uses an ordered ladder so adjacent stages score `partial`
+rather than a flat mismatch; account size compares by order of magnitude,
+because 5,000 vs 6,000 followers is the same situation and 5,000 vs 500,000
+is not.
+
+### The unknown rule
+
+A dimension Kairos cannot compare is `unknown`. It is excluded from the
+similarity denominator — **never scored as a match, never as a mismatch** —
+and instead reduces `dimensionCoverage`.
+
+This keeps two very different claims from looking alike: similarity 0.9 over
+two of seventeen dimensions is not similarity 0.9 over all seventeen. Below
+`minimumDimensionCoverage`, no verdict stronger than
+`insufficiently_comparable` is permitted.
+
+### Evidence hierarchy
+
+`first_party` · `matched_peer` · `niche` · `platform` · `cross_niche` ·
+`research`
+
+Deliberately **not** a simple numeric ranking — objective match, measurement
+quality, recency and context still matter. What the class does guarantee:
+
+- Only `first_party` evidence can ever be `directly_applicable`.
+- `cross_niche` is capped at `hypothesis_only`.
+- `research` is capped at `hypothesis_only`.
+- Stale evidence is capped at `weakly_relevant`.
+- With `firstPartyDominates` (the default), a receiving profile that has
+  **rejected** the same claim downgrades the transfer to `contraindicated`.
+  First-party evidence outranks transferred evidence on its own profile.
+
+### Negative transfer
+
+Risks are detected and reported explicitly rather than left as an absence of
+similarity: `objective_mismatch`, `platform_mechanics_incompatible`,
+`audience_behavior_differs`, `offer_incompatible`,
+`account_stage_mismatch`, `stale_evidence`,
+`conflicting_first_party_evidence`, `leaderboard_not_evidence`. Each carries
+a severity and an explanation.
+
+### Declared vs. observed audience
+
+The `audienceBehavior` dimension engages **only** when the donor evidence is
+observation-backed (`sourceObserved`) and the receiving profile has observed
+segments. A declared audience that happens to read similarly is not
+behavioral proof, so without observation the dimension is `unknown` rather
+than a match — the same declared/observed discipline §16 establishes.
+
+### Battle integration
+
+Battle-sourced evidence keeps its `BattleEvidenceReference` — season,
+protocol version, division, niche, audience context, account stage,
+platform, objective, experiment ids, sample, period, limitations — attached
+all the way through the assessment.
+
+And the guard that matters: a candidate flagged `isLeaderboardPosition` is
+rejected outright as `irrelevant` with reason `leaderboard_not_evidence`. **A
+competition standing never transfers as scientific evidence**, however
+comparable the profiles are.
+
+### Cold start
+
+One of the engine's primary commercial purposes. For a profile with no
+history, `buildColdStartGuidance` returns the honest framing —
+
+> "We do not know what works for this profile yet. Based on evidence from
+> comparable profiles, these are the most promising starting hypotheses —
+> each one still needs testing here."
+
+— plus the ranked starting hypotheses, each labelled with its source class
+and relevance. Nothing is presented as known.
+
+### Explainability contract
+
+Every `TransferAssessment` answers: what evidence, from where, why it might
+apply, why it might not, which dimensions matched, which differed, how fresh
+it is (`evidenceAgeDays`), what is unknown, and what Kairos should do about
+it.
+
+`assessmentConfidence` is confidence in the *assessment* — driven by how much
+was knowable and how many risks were found — and is deliberately separate
+from the underlying claim's own confidence.
+
+### Privacy
+
+Comparison operates on marketing-relevant, aggregate, behavioral dimensions
+only. No type carries a sensitive personal characteristic, and there is no
+per-individual record anywhere: transfer compares **profiles and cohorts,
+never people**.
+
+---
+
+## 24. Development Milestones
 
 | Milestone | Scope | Status |
 | --- | --- | --- |
@@ -1596,8 +1735,8 @@ never themselves findings.
 | 6 — Measurement Ingestion & Attribution | Raw CreatorOS snapshots, normalized post/profile observations, first-party attribution events, tracking context, raw/normalized lineage | Done |
 | 7 — Science Engine | Baselines, comparisons, objective-metric policy, paired analysis, hypothesis evidence & evaluation, operational confidence, finding emission, decay/revalidation, science reports | Done |
 | 8 — Adaptive Strategy Engine | Next-best-action recommendations, exploration/exploitation policy, constraints, content allocation, failure memory, information gain, strategy plans & versioning | Done |
-| **9 — Battle Engine** | Seasons, protocols, competitors, divisions, matchups, pre-registration, lab/growth modes, configurable scoring with vanity guard, standings, predictions, milestones, evidence provenance | **This milestone** |
-| 10 — Intelligence Transfer | Whether evidence from elsewhere is relevant to a given profile; comparability, negative transfer, cold start | Planned |
+| 9 — Battle Engine | Seasons, protocols, competitors, divisions, matchups, pre-registration, lab/growth modes, configurable scoring with vanity guard, standings, predictions, milestones, evidence provenance | Done |
+| **10 — Intelligence Transfer** | Explainable comparability across 17 dimensions, evidence hierarchy, negative transfer, cold start, hypothesis seeding | **This milestone** |
 | 11 — Social Prescription | Evidence-backed, profile-specific strategy packages | Planned |
 | 12 — Social Genome | Conditional evidence map across profile × platform × niche × audience × objective × content | Planned |
 
@@ -1605,7 +1744,7 @@ Each milestone is additive and must leave CreatorOS execution untouched.
 
 ---
 
-## 24. Non-Goals
+## 25. Non-Goals
 
 Explicitly **not** part of Kairos Intelligence, now or later:
 
@@ -1712,9 +1851,19 @@ Explicitly **not** part of Milestone 9:
 - Any customer-facing dashboard or presentation surface. Entertainment
   labels are derived views, and none are computed here.
 
+Explicitly **not** part of Milestone 10:
+
+- Any LLM call, embedding, or fuzzy/semantic matching — every comparison is
+  exact and deterministic.
+- Creating a `Finding` from transferred evidence, under any path.
+- Transferring a leaderboard position as evidence.
+- Inferring sensitive traits, or building any per-individual record.
+- Rewriting Adaptive Strategy; the integration point is
+  `TransferAssessment` feeding future experiment prioritization.
+
 Explicitly **not** part of any milestone so far:
 
-- Intelligence Transfer, Social Prescription, Social Genome.
+- Social Prescription, Social Genome.
 - Onboarding changes, dashboard changes, CreatorOS execution changes.
 
 ---

@@ -73,6 +73,19 @@
  * - Outside knowledge (any `StrategyClaim`) never becomes a `Finding`
  *   automatically — nothing in this store writes to the Findings store.
  *
+ * SOURCE-OF-TRUTH RULES — Intelligence Transfer (Milestone 10)
+ * ------------------------------------------------------------------------
+ * - `TransferAssessment` is an auditable judgment, upserted by id and
+ *   retained historically — a later reassessment never erases the earlier
+ *   one, so "what did we think was transferable, and when" stays
+ *   answerable.
+ * - **Transfer never produces a `Finding`.** Nothing in the transfer module
+ *   writes to the Findings store. Its strongest output is a `Hypothesis` at
+ *   `proposed` with `source: 'research'`, which the Science Engine must
+ *   still validate on the receiving profile's own evidence.
+ * - `PeerCohort` membership is explicit configuration with recorded
+ *   criteria — never silently inferred.
+ *
  * SOURCE-OF-TRUTH RULES — the Battle Engine (Milestone 9)
  * ------------------------------------------------------------------------
  * - Battle configuration (`BattleSeason`, `BattleProtocol`,
@@ -216,6 +229,7 @@ import type {
   BattleSeason,
   BattleSeasonStatus,
 } from '../battle/types.js';
+import type { PeerCohort, TransferAssessment, TransferRelevance } from '../transfer/types.js';
 
 export interface ProfileQuery {
   readonly platform?: Platform;
@@ -375,6 +389,13 @@ export interface BattleSeasonScopedQuery {
 export interface BattlePredictionQuery {
   readonly seasonId: string;
   readonly result?: BattlePrediction['result'];
+  readonly limit?: number;
+}
+
+export interface TransferAssessmentQuery {
+  readonly targetProfileId: string;
+  readonly relevance?: TransferRelevance;
+  readonly findingId?: string;
   readonly limit?: number;
 }
 
@@ -542,4 +563,15 @@ export interface IntelligenceStore {
   saveBattleOutcome(outcome: BattleOutcome): Promise<void>;
   getBattleOutcome(id: string): Promise<BattleOutcome | null>;
   listBattleOutcomes(query: BattleSeasonScopedQuery): Promise<BattleOutcome[]>;
+
+  // ---- Intelligence Transfer (Milestone 10) ----
+
+  /** Upsert by id; historical assessments are retained, never overwritten. */
+  saveTransferAssessment(assessment: TransferAssessment): Promise<void>;
+  getTransferAssessment(id: string): Promise<TransferAssessment | null>;
+  listTransferAssessments(query: TransferAssessmentQuery): Promise<TransferAssessment[]>;
+
+  savePeerCohort(cohort: PeerCohort): Promise<void>;
+  getPeerCohort(id: string): Promise<PeerCohort | null>;
+  listPeerCohorts(): Promise<PeerCohort[]>;
 }

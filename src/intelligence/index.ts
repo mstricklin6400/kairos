@@ -185,6 +185,26 @@ export type {
 } from './battle/types.js';
 
 export type {
+  DimensionComparison,
+  EvidenceSourceClass,
+  NegativeTransferReason,
+  NegativeTransferRisk,
+  PeerCohort,
+  SimilarityProfile,
+  TransferAction,
+  TransferAssessment,
+  TransferCandidate,
+  TransferContext,
+  TransferDimension,
+  TransferDimensionKey,
+  TransferPolicy,
+  TransferRecommendation,
+  TransferRelevance,
+} from './transfer/types.js';
+
+export { DEFAULT_TRANSFER_POLICY } from './transfer/types.js';
+
+export type {
   AudienceIntelligence,
   NicheIntelligence,
   ProfileBrain,

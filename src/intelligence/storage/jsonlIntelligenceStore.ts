@@ -47,6 +47,7 @@ import type {
   BattleScoringModel,
   BattleSeason,
 } from '../battle/types.js';
+import type { PeerCohort, TransferAssessment } from '../transfer/types.js';
 import type {
   AdaptiveStrategyPlanQuery,
   AttributionEventQuery,
@@ -55,6 +56,7 @@ import type {
   BattleSeasonScopedQuery,
   HypothesisEvidenceQuery,
   StrategyRecommendationQuery,
+  TransferAssessmentQuery,
   AudienceSignalQuery,
   BaselineQuery,
   ExperimentQuery,
@@ -167,6 +169,14 @@ function battleDir(workspaceRoot: string): string {
 
 export function battlePath(workspaceRoot: string, name: string): string {
   return join(battleDir(workspaceRoot), `${name}.jsonl`);
+}
+
+export function transferAssessmentsPath(workspaceRoot: string): string {
+  return join(intelligenceDir(workspaceRoot), 'transfer-assessments.jsonl');
+}
+
+export function peerCohortsPath(workspaceRoot: string): string {
+  return join(intelligenceDir(workspaceRoot), 'peer-cohorts.jsonl');
 }
 
 async function appendLine(path: string, entry: unknown): Promise<void> {
@@ -780,5 +790,39 @@ export class JsonlIntelligenceStore implements IntelligenceStore {
   async listBattleOutcomes(query: BattleSeasonScopedQuery): Promise<BattleOutcome[]> {
     const all = await this.battleRecords<BattleOutcome>('outcomes');
     return all.filter((o) => o.seasonId === query.seasonId).slice(0, query.limit ?? 500);
+  }
+
+  // ---- Intelligence Transfer --------------------------------------------
+
+  async saveTransferAssessment(assessment: TransferAssessment): Promise<void> {
+    await appendLine(transferAssessmentsPath(this.workspaceRoot), assessment);
+  }
+
+  async getTransferAssessment(id: string): Promise<TransferAssessment | null> {
+    const all = await readLatestByKey<TransferAssessment>(transferAssessmentsPath(this.workspaceRoot), (a) => a.id);
+    return all.find((a) => a.id === id) ?? null;
+  }
+
+  async listTransferAssessments(query: TransferAssessmentQuery): Promise<TransferAssessment[]> {
+    let all = await readLatestByKey<TransferAssessment>(transferAssessmentsPath(this.workspaceRoot), (a) => a.id);
+    all = all.filter((a) => a.targetProfileId === query.targetProfileId);
+    if (query.relevance) all = all.filter((a) => a.relevance === query.relevance);
+    if (query.findingId) all = all.filter((a) => a.findingId === query.findingId);
+    // Newest first; every earlier assessment is retained.
+    all.sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
+    return all.slice(0, query.limit ?? 200);
+  }
+
+  async savePeerCohort(cohort: PeerCohort): Promise<void> {
+    await appendLine(peerCohortsPath(this.workspaceRoot), cohort);
+  }
+
+  async getPeerCohort(id: string): Promise<PeerCohort | null> {
+    const all = await readLatestByKey<PeerCohort>(peerCohortsPath(this.workspaceRoot), (c) => c.id);
+    return all.find((c) => c.id === id) ?? null;
+  }
+
+  async listPeerCohorts(): Promise<PeerCohort[]> {
+    return readLatestByKey<PeerCohort>(peerCohortsPath(this.workspaceRoot), (c) => c.id);
   }
 }
