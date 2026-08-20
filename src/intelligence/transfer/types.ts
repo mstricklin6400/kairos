@@ -29,6 +29,7 @@
 import type {
   AccountStage,
   Confidence,
+  ContentFormat,
   GrowthObjective,
   IsoDateTime,
   Platform,
@@ -178,6 +179,8 @@ export interface TransferContext {
   readonly postsPerWeek?: number;
   readonly positioning?: string;
   readonly geographicFocus?: readonly string[];
+  /** Formats this profile's own evidence actually concerns. Derived, never assumed. */
+  readonly typicalContentFormats: readonly ContentFormat[];
   /** Whether this profile has any first-party findings at all — drives cold-start handling. */
   readonly hasFirstPartyEvidence: boolean;
 }
@@ -206,6 +209,9 @@ export interface TransferCandidate {
   readonly sourceFollowerCount?: number;
   readonly sourcePositioning?: string;
   readonly sourceGeographicFocus?: readonly string[];
+  /** Content DNA the donor evidence concerns, where the finding recorded it. */
+  readonly sourceContentFormat?: ContentFormat;
+  readonly sourceHookFamily?: string;
   readonly confidence: Confidence;
   readonly sampleSize: number;
   /** When the evidence was last validated — drives the freshness dimension. */

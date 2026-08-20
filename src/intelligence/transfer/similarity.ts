@@ -198,9 +198,15 @@ export function compareDimensions(
       sourceValue: candidate.sourceFollowerCount?.toString(),
       targetValue: context.followerCount?.toString(),
     },
-    // Content format and experimental conditions are not carried on a
-    // Finding today, so they are honestly unknown rather than guessed.
-    { key: 'contentFormat', comparison: 'unknown' },
+    {
+      key: 'contentFormat',
+      comparison: compareSets(
+        candidate.sourceContentFormat ? [candidate.sourceContentFormat] : undefined,
+        context.typicalContentFormats.length > 0 ? context.typicalContentFormats : undefined,
+      ),
+      sourceValue: candidate.sourceContentFormat,
+      targetValue: context.typicalContentFormats.join(', ') || undefined,
+    },
     { key: 'experimentalConditions', comparison: candidate.battleProvenance ? 'match' : 'unknown' },
     { key: 'postingCapacity', comparison: compareMagnitude(undefined, context.postsPerDay) },
     {

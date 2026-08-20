@@ -1547,6 +1547,7 @@ forward into Intelligence Transfer:
 | experiment ids | `Finding.sourceExperimentIds` · `BattleEvidenceReference.experimentIds` |
 | sample | `Finding.sampleSize` · `BattleEvidenceReference.sampleSize` |
 | time period | `Finding.observationWindow` · `BattleEvidenceReference.periodStart`/`periodEnd` |
+| content DNA | `Finding.hookFamily` · `Finding.contentFormat` · `Finding.contentPillarId` |
 | limitations | `Finding.limitations` · `BattleEvidenceReference.limitations` |
 | season · protocol version · division/cohort | `BattleEvidenceReference.seasonId` / `protocolVersion` / `divisionId` / `cohortId` |
 
@@ -1568,6 +1569,26 @@ before any battle evidence could enter the intelligence base:
 `BattleEngine.buildEvidenceReference` assembles the full envelope, inheriting
 matchup limitations for division-scoped evidence and flagging small samples
 automatically.
+
+A third gap was closed after Milestone 12: `Finding` now also carries
+**content DNA** — `hookFamily`, `contentFormat` and `contentPillarId`.
+Previously these lived only on the originating `Experiment`, so a finding
+that travelled arrived without them. Reaching back through
+`sourceExperimentIds` is lossy in practice (a finding spanning several
+experiments has no single content DNA), which left four downstream modules
+unable to answer "which hook?" or "which format?":
+
+- **Transfer** treated `contentFormat` as permanently `unknown`, capping
+  achievable dimension coverage.
+- **Prescription** returned no recommended formats and keyed hook guidance
+  off the finding's full statement.
+- **Adaptive Strategy**'s content-allocation logic was wired but inert —
+  no finding named a pillar, so `evidenceByPillar` was always empty.
+- **Genome** patterns could not be keyed on a real hook family.
+
+All four now work off the finding directly. All three fields stay optional:
+a finding that genuinely is not about one hook family or one format leaves
+them absent rather than guessing.
 
 ### What already protects this
 

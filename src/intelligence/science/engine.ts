@@ -461,6 +461,10 @@ export class ScienceEngine {
     readonly context: FindingEmissionContext;
     readonly sourceExperimentIds: readonly string[];
     readonly effectSize?: Finding['effectSize'];
+    /** Content DNA the finding is about, carried onto it for downstream consumers. */
+    readonly hookFamily?: Finding['hookFamily'];
+    readonly contentFormat?: Finding['contentFormat'];
+    readonly contentPillarId?: Finding['contentPillarId'];
     /** The period the evidence covers, distinct from when this record was written. */
     readonly observationWindow?: Finding['observationWindow'];
     /** Extra caveats to carry onto the finding, merged with the evaluation's own. */
@@ -499,6 +503,9 @@ export class ScienceEngine {
       effectSize: input.effectSize,
       status,
       sourceExperimentIds: input.sourceExperimentIds,
+      hookFamily: input.hookFamily,
+      contentFormat: input.contentFormat,
+      contentPillarId: input.contentPillarId,
       observationWindow: input.observationWindow,
       // Caveats travel with the conclusion. The evaluation's own limitations
       // are carried forward so a thin result cannot arrive downstream

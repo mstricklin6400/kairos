@@ -112,6 +112,15 @@ export class IntelligenceTransferEngine {
       postsPerWeek: profile.strategy.postingFrequency.postsPerWeek,
       positioning: profile.identity.positioning,
       geographicFocus: profile.market.geographicFocus,
+      // Formats this profile's own evidence concerns — derived from its
+      // findings rather than assumed from the platform.
+      typicalContentFormats: [
+        ...new Set(
+          findings
+            .map((f) => f.contentFormat)
+            .filter((format): format is NonNullable<typeof format> => format !== undefined),
+        ),
+      ],
       hasFirstPartyEvidence: findings.length > 0,
       ...overrides,
     };
@@ -148,6 +157,9 @@ export class IntelligenceTransferEngine {
       sourceFollowerCount: input.sourceFollowerCount,
       sourcePositioning: input.sourcePositioning,
       sourceGeographicFocus: input.sourceGeographicFocus,
+      // Content DNA now travels on the finding itself.
+      sourceContentFormat: finding.contentFormat,
+      sourceHookFamily: finding.hookFamily,
       confidence: finding.confidence,
       sampleSize: finding.sampleSize,
       lastValidatedAt: finding.lastValidatedAt,

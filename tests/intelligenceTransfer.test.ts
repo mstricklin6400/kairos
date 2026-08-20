@@ -60,6 +60,7 @@ function context(overrides: Partial<TransferContext> = {}): TransferContext {
     postsPerDay: 2,
     positioning: 'No-fluff debt payoff',
     geographicFocus: ['US'],
+    typicalContentFormats: ['text'],
     hasFirstPartyEvidence: true,
     ...overrides,
   };

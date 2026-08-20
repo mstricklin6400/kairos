@@ -237,6 +237,24 @@ export interface Finding {
   readonly effectSize?: EffectSize;
   readonly status: FindingStatus;
   readonly sourceExperimentIds: readonly string[];
+  /* ---- Content DNA ----------------------------------------------------
+   * The structured description of WHAT the evidence was about, carried onto
+   * the finding rather than left only on the originating `Experiment`.
+   *
+   * A finding travels — into Transfer, the Genome and Prescriptions — and
+   * at each of those boundaries "which hook family?" and "which format?"
+   * are load-bearing questions. Reaching back through `sourceExperimentIds`
+   * to `Experiment.contentDna` is possible but lossy in practice: a finding
+   * spanning several experiments has no single content DNA, and downstream
+   * consumers were previously forced to treat these as permanently unknown.
+   *
+   * All three are optional: a finding that genuinely isn't about one hook
+   * family or one format leaves them absent rather than guessing.
+   * ------------------------------------------------------------------- */
+  readonly hookFamily?: HookFamily;
+  readonly contentFormat?: ContentFormat;
+  /** References `ContentPillar.id` on the profile — lets allocation act on evidence. */
+  readonly contentPillarId?: string;
   /**
    * The period the underlying evidence actually covers — distinct from
    * `createdAt`/`lastValidatedAt`, which are record timestamps. Without

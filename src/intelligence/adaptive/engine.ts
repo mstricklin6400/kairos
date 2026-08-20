@@ -505,9 +505,26 @@ export class AdaptiveStrategyEngine {
       limitations.push('unknown_attribution');
     }
 
+    // Per-pillar evidence, from findings that name the pillar they concern.
+    // A validated/promising finding argues the pillar up; a rejected one
+    // argues it down. Pillars with no evidence keep their current share —
+    // `recommendContentAllocation` leaves them untouched.
+    const evidenceByPillar: Record<string, { direction: 'up' | 'down'; sampleSize: number }> = {};
+    for (const finding of await this.store.listFindings({ profileId })) {
+      const pillarId = finding.contentPillarId;
+      if (!pillarId) continue;
+      const direction = finding.status === 'rejected' ? 'down' : 'up';
+      const existing = evidenceByPillar[pillarId];
+      // Keep the larger sample; a bigger study outranks a smaller one for
+      // deciding which way this pillar is trending.
+      if (!existing || finding.sampleSize > existing.sampleSize) {
+        evidenceByPillar[pillarId] = { direction, sampleSize: finding.sampleSize };
+      }
+    }
+
     const contentAllocation: PillarAllocation[] = recommendContentAllocation({
       currentAllocations: profile.strategy.currentAllocations,
-      evidenceByPillar: {},
+      evidenceByPillar,
       policy: this.policy,
     });
 

@@ -177,10 +177,17 @@ export class SocialPrescriptionEngine {
     };
   }
 
-  /** WHAT — pillars, formats, topics, honoring declared constraints. */
+  /**
+   * WHAT — pillars, formats, topics, honoring declared constraints.
+   *
+   * Formats are derived from the profile's own non-rejected findings that
+   * actually name one. A format only appears here because evidence on this
+   * profile pointed at it; nothing is asserted from convention.
+   */
   private async buildContentPrescription(profileId: string): Promise<ContentPrescription> {
     const profile = await this.store.getProfile(profileId);
     const plan = await this.adaptive.getLatestPlan(profileId);
+    const findings = await this.store.listFindings({ profileId });
 
     const pillars = (plan?.contentAllocation ?? []).map((a) => ({
       pillarId: a.pillarId,
@@ -188,17 +195,31 @@ export class SocialPrescriptionEngine {
       reason: a.reason,
     }));
 
+    const recommendedFormats = [
+      ...new Set(
+        findings
+          .filter((f) => f.status !== 'rejected' && classifyFinding(f, this.policy) !== 'unknown')
+          .map((f) => f.contentFormat)
+          .filter((format): format is NonNullable<typeof format> => format !== undefined),
+      ),
+    ];
+
     return {
       pillars,
-      // Formats are not carried on a Finding, so none are asserted rather
-      // than guessed. A later milestone can reach through to Experiment DNA.
-      recommendedFormats: [],
+      recommendedFormats,
       topicsToEmphasize: [],
       topicsToAvoid: profile?.identity.styleConstraints ?? [],
     };
   }
 
-  /** HOW — hook patterns, each with its evidence class and separate examples. */
+  /**
+   * HOW — hook patterns, each with its evidence class and separate examples.
+   *
+   * Keyed on the finding's own `hookFamily` where it has one. A finding that
+   * isn't about a specific hook family falls back to its statement as the
+   * pattern label rather than being dropped — the guidance is still real,
+   * it just isn't hook-scoped.
+   */
   private async buildHookPrescriptions(
     profileId: string,
     examples: ExampleLibrary,
@@ -210,13 +231,13 @@ export class SocialPrescriptionEngine {
       if (finding.status === 'rejected') continue;
       const evidenceClass = classifyFinding(finding, this.policy);
       if (evidenceClass === 'unknown') continue;
-      // Hook family is not a structured field on a Finding; the statement is
-      // the pattern, and it is presented as such rather than parsed.
-      const family = finding.statement;
+      const family = finding.hookFamily ?? finding.statement;
       hooks.push({
         hookFamily: family,
         evidenceClass,
-        rationale: describeEvidenceClass(evidenceClass),
+        rationale: finding.hookFamily
+          ? `${describeEvidenceClass(evidenceClass)} for the "${finding.hookFamily}" hook family.`
+          : describeEvidenceClass(evidenceClass),
         examples: (examples.byHookFamily?.[family] ?? []).map((text) => ({
           text,
           illustratesPattern: family,
