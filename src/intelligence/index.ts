@@ -228,6 +228,31 @@ export type {
 export { DEFAULT_PRESCRIPTION_POLICY } from './prescription/types.js';
 
 export type {
+  ContextMatchQuality,
+  GenomeConfidence,
+  GenomeConsistency,
+  GenomeContext,
+  GenomeEdge,
+  GenomeEvidence,
+  GenomeFreshness,
+  GenomeMatch,
+  GenomeNode,
+  GenomeNodeKind,
+  GenomeOutcome,
+  GenomeOutcomeDirection,
+  GenomePattern,
+  GenomePolicy,
+  GenomeQuery,
+  GenomeQueryResult,
+  GenomeScopeLevel,
+  GenomeSnapshot,
+  GenomeVersion,
+  SocialGenome,
+} from './genome/types.js';
+
+export { DEFAULT_GENOME_POLICY } from './genome/types.js';
+
+export type {
   AudienceIntelligence,
   NicheIntelligence,
   ProfileBrain,

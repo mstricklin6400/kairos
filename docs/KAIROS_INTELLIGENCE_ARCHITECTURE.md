@@ -1332,7 +1332,8 @@ measurement/attribution stores. Milestone 7 added the hypothesis-evidence
 store. Milestone 8 added the recommendation and strategy-plan stores.
 Milestone 9 added the battle stores. Milestone 10 added the
 transfer-assessment and peer-cohort stores. Milestone 11 added the
-social-prescription store.**
+social-prescription store. Milestone 12 added the genome pattern,
+evidence, node, edge and snapshot stores.**
 
 ---
 
@@ -1814,7 +1815,170 @@ no content generation — CreatorOS remains the execution layer.
 
 ---
 
-## 25. Development Milestones
+## 25. Social Genome
+
+Milestone 12. The higher-order map of what Kairos has learned about how
+social performance behaves under different conditions, across:
+
+```
+PROFILE x PLATFORM x NICHE x AUDIENCE x OBJECTIVE x OFFER x ACCOUNT STAGE
+  x CONTENT x HOOK x FORMAT x CTA x CADENCE x CONDITIONS x OUTCOME
+```
+
+It answers: *what tends to work, for whom, where, under what conditions, for
+which objective, and with what evidence?*
+
+### Not a universal best-strategy table
+
+The safeguard the whole module is built around:
+
+> BAD: "Question hooks work."
+>
+> GOOD: "Question-led hooks are associated with higher reply rates under
+> these observed conditions, with these limitations."
+
+Every `GenomePattern` is inseparable from its `GenomeContext`. There is no
+field in which a context-free claim can be stored, and **missing dimensions
+stay missing** — an absent context value is unknown, never a wildcard and
+never a default.
+
+The same strategy is free to behave differently by objective, platform,
+audience segment and account stage; the Genome records those as separate
+conditional patterns rather than averaging them into one verdict.
+
+### No double counting
+
+This is the most important correctness property in the module.
+
+One experiment produces a measurement. The Science Engine turns it into an
+observation and then a `Finding`. Transfer builds a `TransferAssessment`
+from that finding. A prescription cites the assessment. **That is five
+records and one piece of evidence.** A Genome counting records would report
+five-fold support for a claim resting on a single experiment.
+
+Every `GenomeEvidence` therefore declares `lineageRoots` — the primitive
+evidence ids it ultimately derives from — and every independent-evidence
+count is computed over the **union of those roots**, never over record
+count. `deduplicateByLineage` uses union-find so transitive chains (A shares
+a root with B, B with C) collapse into one group, keeping the most direct
+record as representative.
+
+Confidence, consistency and promotion thresholds all consume the
+deduplicated count, so an echoed experiment cannot manufacture confidence.
+
+### Evidence graph
+
+`GenomeNode` and `GenomeEdge` materialize the context dimensions and their
+relationship to the outcome. Every edge names the `patternId` and the
+evidence ids behind it, so any derived relationship traces back to the
+records that justify it. Source class is preserved on every piece of
+evidence.
+
+### Generalization is never automatic
+
+Scopes run `profile` → `segment` → `cohort` → `niche` → `platform_niche` →
+`platform` → `cross_niche`.
+
+Patterns are created at the **narrowest** scope, and **nothing is ever
+promoted automatically** — a pattern with strong, consistent, plentiful
+profile-level evidence stays profile-scoped until `promotePattern` is called
+explicitly and the evidence clears the policy bar: enough independent
+evidence, consistent (not mixed) evidence, and for niche scope or wider,
+enough distinct profiles.
+
+### Contradictions are preserved
+
+`GenomeConsistency` is `consistent` / `mixed` / `contradicted` /
+`insufficient`. Genuinely split evidence reads `mixed` and stays that way —
+it is never averaged until the disagreement disappears. A query says so:
+*"Evidence is mixed on N of them — see contradicting evidence."*
+`findContradictions` surfaces exactly those patterns.
+
+### Query engine
+
+`GenomeQuery` filters by any dimension; `GenomeMatch` returns the pattern
+plus `contextMatch` quality (`exact` / `broader` / `partial` / `unknown`),
+which dimensions matched, which were unspecified, supporting and
+contradicting evidence, freshness, and limitations.
+
+`insufficientEvidence` is a first-class result: when nothing in the Genome
+addresses a question, it says so rather than returning the nearest thing.
+
+A pattern from another profile's context carries
+`requiresTransferAssessment: true` — the Genome flags the need for a
+transfer judgment rather than making one. **Intelligence Transfer is reused,
+not duplicated**; there is no second similarity engine here.
+
+### Temporal behavior
+
+Patterns carry `firstObservedAt`, `lastObservedAt`, `lastValidatedAt`,
+freshness (`current` / `aging` / `stale`) and an optional `platformEra`
+marker. Stale evidence reduces confidence and surfaces through
+`findStalePatterns`, but old evidence remains available — nothing is
+deleted.
+
+### Snapshots and reproducibility
+
+`GenomeSnapshot` captures pattern ids and their confidence at a point in
+time, versioned and never rewritten. That makes "what did the intelligence
+base believe as of version X" a question with a real answer — verified by
+test: confidence changing later does not alter what an earlier snapshot
+recorded.
+
+### Privacy
+
+The Genome is not a people database. It holds aggregate, marketing-relevant
+behavioral relationships; audience appears only as a segment id. No type
+carries a sensitive personal characteristic and there is no per-individual
+record of any kind.
+
+---
+
+## 26. The Complete Intelligence Loop
+
+```
+Research  (StrategyClaim, StrategyPrinciple)
+      |
+Profile Onboarding  (SocialProfile, ProfileBrain)
+      |
+Measurement + Audience Signals  (PostMeasurement, AttributionEvent, AudienceSignal)
+      |
+Science Engine  (baselines, comparisons, hypotheses, Findings)
+      |
+Adaptive Strategy  (next-best-action recommendations)
+      |
+Battle / Social Money Lab  (controlled competitions, scoped evidence)
+      |
+Intelligence Transfer  (is this evidence relevant to that profile?)
+      |
+Social Genome  (conditional map of what works, for whom, when)
+      |
+Social Prescription  (evidence-backed package for one business)
+      |
+CreatorOS execution  (publish, schedule, engage)
+      |
+new measurements  --> back to the top
+```
+
+**This is a learning loop, not a strict runtime pipeline.** No request
+traverses these stages in order. Each layer reads what the ones beneath it
+have already established, on its own cadence: a prescription can be built
+without a battle ever running, transfer can operate on a cold-start profile
+with no measurements of its own, and the Science Engine evaluates whenever
+evidence arrives rather than on a schedule set from above.
+
+What the diagram does describe is **the direction of dependency and the
+direction of trust**. Evidence flows upward and gains scope only through
+explicit, policy-gated steps; conclusions flow downward and never acquire
+authority they did not earn. At every boundary the same three rules hold:
+
+1. Raw evidence is never overwritten by an interpretation of it.
+2. Scope is never widened automatically.
+3. Missing is never the same as zero.
+
+---
+
+## 27. Development Milestones
 
 | Milestone | Scope | Status |
 | --- | --- | --- |
@@ -1828,14 +1992,14 @@ no content generation — CreatorOS remains the execution layer.
 | 8 — Adaptive Strategy Engine | Next-best-action recommendations, exploration/exploitation policy, constraints, content allocation, failure memory, information gain, strategy plans & versioning | Done |
 | 9 — Battle Engine | Seasons, protocols, competitors, divisions, matchups, pre-registration, lab/growth modes, configurable scoring with vanity guard, standings, predictions, milestones, evidence provenance | Done |
 | 10 — Intelligence Transfer | Explainable comparability across 17 dimensions, evidence hierarchy, negative transfer, cold start, hypothesis seeding | Done |
-| **11 — Social Prescription** | Nine-section evidence-backed strategy packages, non-collapsing evidence classes, pattern-vs-example separation, objective depth, versioning | **This milestone** |
-| 12 — Social Genome | Conditional evidence map across profile × platform × niche × audience × objective × content | Planned |
+| 11 — Social Prescription | Nine-section evidence-backed strategy packages, non-collapsing evidence classes, pattern-vs-example separation, objective depth, versioning | Done |
+| **12 — Social Genome** | Conditional evidence map, lineage-aware no-double-counting, explicit generalization, contradiction preservation, query engine, snapshots | **This milestone** |
 
 Each milestone is additive and must leave CreatorOS execution untouched.
 
 ---
 
-## 26. Non-Goals
+## 28. Non-Goals
 
 Explicitly **not** part of Kairos Intelligence, now or later:
 
@@ -1962,9 +2126,15 @@ Explicitly **not** part of Milestone 11:
 - Writing a `Finding`, or letting a prescription become evidence.
 - Any customer dashboard, delivery surface or publishing.
 
-Explicitly **not** part of any milestone so far:
+Explicitly **not** part of Milestone 12:
 
-- Social Genome.
+- Any LLM call, embedding or automated inference of relationships.
+- A universal best-strategy table, or any context-free claim.
+- Automatic generalization of scope.
+- A second similarity engine — Intelligence Transfer is reused.
+- Creating prescriptions; the Genome supplies structured intelligence only.
+- Any per-individual record or sensitive-trait inference.
+- Rewriting historical snapshots.
 - Onboarding changes, dashboard changes, CreatorOS execution changes.
 
 ---
