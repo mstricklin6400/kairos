@@ -51,6 +51,21 @@ import type { PeerCohort, TransferAssessment } from '../transfer/types.js';
 import type { SocialPrescription } from '../prescription/types.js';
 import type { GenomePattern } from '../genome/types.js';
 import type {
+  AgentAction,
+  AgentChangeRecord,
+  AgentMission,
+  AgentPermissionPolicy,
+  CreatorOsExecutionHandoff,
+  LivingSocialPrescription,
+  SocialIntelligenceAgent,
+} from '../agentic/types.js';
+import type {
+  AgentActionQuery,
+  AgentChangeRecordQuery,
+  AgentMissionQuery,
+  AgentQuery,
+  ExecutionHandoffQuery,
+  LivingPrescriptionQuery,
   AdaptiveStrategyPlanQuery,
   AttributionEventQuery,
   BattlePredictionQuery,
@@ -190,6 +205,11 @@ export function socialPrescriptionsPath(workspaceRoot: string): string {
 /** All Social Genome records live under `kairos/intelligence/genome/`. */
 export function genomePath(workspaceRoot: string, name: string): string {
   return join(intelligenceDir(workspaceRoot), 'genome', `${name}.jsonl`);
+}
+
+/** All agent state lives under `kairos/intelligence/agentic/`. */
+export function agenticPath(workspaceRoot: string, name: string): string {
+  return join(intelligenceDir(workspaceRoot), 'agentic', `${name}.jsonl`);
 }
 
 async function appendLine(path: string, entry: unknown): Promise<void> {
@@ -886,5 +906,132 @@ export class JsonlIntelligenceStore implements IntelligenceStore {
     const all = await readLatestByKey<GenomePattern>(genomePath(this.workspaceRoot, 'pattern-history'), (p) => p.id);
     // History ids are `${patternId}@v${version}`.
     return all.filter((p) => p.id.startsWith(`${patternId}@v`));
+  }
+
+  // ---- Agentic Social Prescription ---------------------------------------
+
+  async saveAgent(agent: SocialIntelligenceAgent): Promise<void> {
+    await appendLine(agenticPath(this.workspaceRoot, 'agents'), agent);
+  }
+
+  async getAgent(id: string): Promise<SocialIntelligenceAgent | null> {
+    const all = await readLatestByKey<SocialIntelligenceAgent>(agenticPath(this.workspaceRoot, 'agents'), (a) => a.id);
+    return all.find((a) => a.id === id) ?? null;
+  }
+
+  async listAgents(query: AgentQuery = {}): Promise<SocialIntelligenceAgent[]> {
+    let all = await readLatestByKey<SocialIntelligenceAgent>(agenticPath(this.workspaceRoot, 'agents'), (a) => a.id);
+    if (query.workspaceId) all = all.filter((a) => a.workspaceId === query.workspaceId);
+    if (query.profileId) all = all.filter((a) => a.profileIds.includes(query.profileId as string));
+    return all.slice(0, query.limit ?? 200);
+  }
+
+  async saveAgentMission(mission: AgentMission): Promise<void> {
+    await appendLine(agenticPath(this.workspaceRoot, 'missions'), mission);
+  }
+
+  async getAgentMission(id: string): Promise<AgentMission | null> {
+    const all = await readLatestByKey<AgentMission>(agenticPath(this.workspaceRoot, 'missions'), (m) => m.id);
+    return all.find((m) => m.id === id) ?? null;
+  }
+
+  async listAgentMissions(query: AgentMissionQuery): Promise<AgentMission[]> {
+    let all = await readLatestByKey<AgentMission>(agenticPath(this.workspaceRoot, 'missions'), (m) => m.id);
+    all = all.filter((m) => m.agentId === query.agentId);
+    if (query.status) all = all.filter((m) => m.status === query.status);
+    // Newest version first; superseded missions are retained.
+    all.sort((a, b) => b.version - a.version);
+    return all.slice(0, query.limit ?? 100);
+  }
+
+  async saveAgentPermissionPolicy(policy: AgentPermissionPolicy): Promise<void> {
+    await appendLine(agenticPath(this.workspaceRoot, 'permission-policies'), policy);
+  }
+
+  async getAgentPermissionPolicy(agentId: string): Promise<AgentPermissionPolicy | null> {
+    const all = await readLatestByKey<AgentPermissionPolicy>(
+      agenticPath(this.workspaceRoot, 'permission-policies'),
+      (p) => p.agentId,
+    );
+    return all.find((p) => p.agentId === agentId) ?? null;
+  }
+
+  async saveAgentAction(action: AgentAction): Promise<void> {
+    await appendLine(agenticPath(this.workspaceRoot, 'actions'), action);
+  }
+
+  async getAgentAction(id: string): Promise<AgentAction | null> {
+    const all = await readLatestByKey<AgentAction>(agenticPath(this.workspaceRoot, 'actions'), (a) => a.id);
+    return all.find((a) => a.id === id) ?? null;
+  }
+
+  async listAgentActions(query: AgentActionQuery): Promise<AgentAction[]> {
+    let all = await readLatestByKey<AgentAction>(agenticPath(this.workspaceRoot, 'actions'), (a) => a.id);
+    all = all.filter((a) => a.agentId === query.agentId);
+    if (query.profileId) all = all.filter((a) => a.profileId === query.profileId);
+    if (query.status) all = all.filter((a) => a.status === query.status);
+    // Highest priority first, then newest.
+    all.sort((a, b) => (b.priority - a.priority) || (a.requestedAt < b.requestedAt ? 1 : -1));
+    return all.slice(0, query.limit ?? 200);
+  }
+
+  async saveLivingPrescription(prescription: LivingSocialPrescription): Promise<void> {
+    await appendLine(agenticPath(this.workspaceRoot, 'living-prescriptions'), prescription);
+  }
+
+  async getLivingPrescription(id: string): Promise<LivingSocialPrescription | null> {
+    const all = await readLatestByKey<LivingSocialPrescription>(
+      agenticPath(this.workspaceRoot, 'living-prescriptions'),
+      (p) => p.id,
+    );
+    return all.find((p) => p.id === id) ?? null;
+  }
+
+  async listLivingPrescriptions(query: LivingPrescriptionQuery): Promise<LivingSocialPrescription[]> {
+    let all = await readLatestByKey<LivingSocialPrescription>(
+      agenticPath(this.workspaceRoot, 'living-prescriptions'),
+      (p) => p.id,
+    );
+    all = all.filter((p) => p.agentId === query.agentId);
+    if (query.profileId) all = all.filter((p) => p.profileIds.includes(query.profileId as string));
+    // Newest version first; every earlier version is retained.
+    all.sort((a, b) => b.version - a.version);
+    return all.slice(0, query.limit ?? 100);
+  }
+
+  async saveExecutionHandoff(handoff: CreatorOsExecutionHandoff): Promise<void> {
+    await appendLine(agenticPath(this.workspaceRoot, 'execution-handoffs'), handoff);
+  }
+
+  async getExecutionHandoff(id: string): Promise<CreatorOsExecutionHandoff | null> {
+    const all = await readLatestByKey<CreatorOsExecutionHandoff>(
+      agenticPath(this.workspaceRoot, 'execution-handoffs'),
+      (h) => h.id,
+    );
+    return all.find((h) => h.id === id) ?? null;
+  }
+
+  async listExecutionHandoffs(query: ExecutionHandoffQuery): Promise<CreatorOsExecutionHandoff[]> {
+    let all = await readLatestByKey<CreatorOsExecutionHandoff>(
+      agenticPath(this.workspaceRoot, 'execution-handoffs'),
+      (h) => h.id,
+    );
+    all = all.filter((h) => h.agentId === query.agentId);
+    if (query.status) all = all.filter((h) => h.status === query.status);
+    all.sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
+    return all.slice(0, query.limit ?? 200);
+  }
+
+  async saveAgentChangeRecord(record: AgentChangeRecord): Promise<void> {
+    await appendLine(agenticPath(this.workspaceRoot, 'change-log'), record);
+  }
+
+  async listAgentChangeRecords(query: AgentChangeRecordQuery): Promise<AgentChangeRecord[]> {
+    let all = await readLatestByKey<AgentChangeRecord>(agenticPath(this.workspaceRoot, 'change-log'), (r) => r.id);
+    all = all.filter((r) => r.agentId === query.agentId);
+    if (query.changeType) all = all.filter((r) => r.changeType === query.changeType);
+    // Newest first. Nothing is ever removed.
+    all.sort((a, b) => (a.occurredAt < b.occurredAt ? 1 : -1));
+    return all.slice(0, query.limit ?? 500);
   }
 }

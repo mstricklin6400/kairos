@@ -243,6 +243,18 @@ import type {
 import type { PeerCohort, TransferAssessment, TransferRelevance } from '../transfer/types.js';
 import type { SocialPrescription } from '../prescription/types.js';
 import type { GenomePattern, GenomePatternStatus } from '../genome/types.js';
+import type {
+  AgentAction,
+  AgentActionStatus,
+  AgentChangeRecord,
+  AgentChangeType,
+  AgentMission,
+  AgentPermissionPolicy,
+  CreatorOsExecutionHandoff,
+  HandoffStatus,
+  LivingSocialPrescription,
+  SocialIntelligenceAgent,
+} from '../agentic/types.js';
 
 export interface ProfileQuery {
   readonly platform?: Platform;
@@ -420,6 +432,43 @@ export interface SocialPrescriptionQuery {
 export interface GenomePatternQuery {
   readonly status?: GenomePatternStatus;
   readonly contextSignature?: string;
+  readonly limit?: number;
+}
+
+export interface AgentQuery {
+  readonly workspaceId?: string;
+  readonly profileId?: string;
+  readonly limit?: number;
+}
+
+export interface AgentMissionQuery {
+  readonly agentId: string;
+  readonly status?: AgentMission['status'];
+  readonly limit?: number;
+}
+
+export interface AgentActionQuery {
+  readonly agentId: string;
+  readonly profileId?: string;
+  readonly status?: AgentActionStatus;
+  readonly limit?: number;
+}
+
+export interface LivingPrescriptionQuery {
+  readonly agentId: string;
+  readonly profileId?: string;
+  readonly limit?: number;
+}
+
+export interface ExecutionHandoffQuery {
+  readonly agentId: string;
+  readonly status?: HandoffStatus;
+  readonly limit?: number;
+}
+
+export interface AgentChangeRecordQuery {
+  readonly agentId: string;
+  readonly changeType?: AgentChangeType;
   readonly limit?: number;
 }
 
@@ -616,4 +665,45 @@ export interface IntelligenceStore {
   /** Prior versions, retained so a superseded belief stays inspectable. */
   saveGenomePatternHistory(pattern: GenomePattern): Promise<void>;
   listGenomePatternHistory(patternId: string): Promise<GenomePattern[]>;
+
+  // ---- Agentic Social Prescription (Milestone 12) ----
+  //
+  // Per-customer persistent agent state. Every customer shares the same
+  // architecture; what differs is the STATE stored here. Nothing in this
+  // section is ever destroyed on update: missions supersede, prescriptions
+  // supersede, actions accumulate a decision trail, and the change log is
+  // append-only.
+
+  /** Upsert by id. */
+  saveAgent(agent: SocialIntelligenceAgent): Promise<void>;
+  getAgent(id: string): Promise<SocialIntelligenceAgent | null>;
+  listAgents(query?: AgentQuery): Promise<SocialIntelligenceAgent[]>;
+
+  /** Upsert by id. A revised mission is a NEW record that supersedes the old one. */
+  saveAgentMission(mission: AgentMission): Promise<void>;
+  getAgentMission(id: string): Promise<AgentMission | null>;
+  listAgentMissions(query: AgentMissionQuery): Promise<AgentMission[]>;
+
+  /** Upsert by agentId — one active permission policy per agent. */
+  saveAgentPermissionPolicy(policy: AgentPermissionPolicy): Promise<void>;
+  getAgentPermissionPolicy(agentId: string): Promise<AgentPermissionPolicy | null>;
+
+  /** Upsert by id. `humanDecisions` is appended to, never replaced. */
+  saveAgentAction(action: AgentAction): Promise<void>;
+  getAgentAction(id: string): Promise<AgentAction | null>;
+  listAgentActions(query: AgentActionQuery): Promise<AgentAction[]>;
+
+  /** Upsert by id. Superseded versions are retained, exactly like the Genome. */
+  saveLivingPrescription(prescription: LivingSocialPrescription): Promise<void>;
+  getLivingPrescription(id: string): Promise<LivingSocialPrescription | null>;
+  listLivingPrescriptions(query: LivingPrescriptionQuery): Promise<LivingSocialPrescription[]>;
+
+  /** Upsert by id. The boundary record between intelligence and CreatorOS execution. */
+  saveExecutionHandoff(handoff: CreatorOsExecutionHandoff): Promise<void>;
+  getExecutionHandoff(id: string): Promise<CreatorOsExecutionHandoff | null>;
+  listExecutionHandoffs(query: ExecutionHandoffQuery): Promise<CreatorOsExecutionHandoff[]>;
+
+  /** Append-only by id. The audit trail of everything the agent changed and why. */
+  saveAgentChangeRecord(record: AgentChangeRecord): Promise<void>;
+  listAgentChangeRecords(query: AgentChangeRecordQuery): Promise<AgentChangeRecord[]>;
 }

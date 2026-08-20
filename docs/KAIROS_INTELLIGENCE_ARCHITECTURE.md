@@ -2050,7 +2050,169 @@ added on top.
 
 ---
 
-## 26. The Complete Intelligence Loop
+## 26. Agentic Social Prescription
+
+§24's `SocialPrescription` is a **document**: generated once, correct as of
+its evidence cutoff, and inert thereafter. Milestone 12 turns it into a
+**persistent operating agent** — the layer Social Money Lab sells.
+
+### External architecture
+
+```
+SOCIAL MONEY LAB                       (customer-facing product)
+        |
+CUSTOMER WORKSPACE                     (one business, isolated state)
+        |
+AGENTIC SOCIAL PRESCRIPTION            (this milestone)
+        |
+CUSTOMIZED INTELLIGENCE ENGINE         (Milestones 1-11)
+        |
+CREATOROS                              (execution: publish, schedule, engage)
+        |
+SOCIAL PLATFORMS
+        |
+MEASUREMENTS RETURN  ---------------->  back up the stack
+```
+
+The agent decides. CreatorOS acts. The platforms respond. Measurements come
+back, the evidence changes, and the agent decides differently next time.
+
+### One architecture, many states
+
+A `SocialIntelligenceAgent` is **not a separate AI model per customer**.
+Every customer shares the same deterministic architecture; what differs is
+the persistent **state** stored against their agent: mission, permissions,
+evidence picture, action queue, prescription version history and change log.
+Nothing is fine-tuned, nothing is trained, and no customer's data becomes
+another customer's advice except through the Genome's aggregate,
+privacy-preserving path (§25).
+
+### Mission
+
+`AgentMission` states a **business** objective — *"generate 10 qualified
+leads a month"* — not a vanity target. It carries the objective, platform
+scope, offers, audience scope, and three constraint families: resource
+(capacity), brand (topics and tone to avoid) and risk. A revised mission is
+a **new record** that supersedes the old one via `supersedesMissionId`; the
+prior mission stays readable, because "why did the strategy change?" is
+usually answered by "the mission did."
+
+### Evidence states
+
+The agent's whole picture of a profile reduces to five states:
+
+| State | Meaning |
+| --- | --- |
+| `know` | Validated on THIS profile, at or above the confidence bar |
+| `suspect` | Promising, transferred, Genome-supported or research-informed |
+| `test` | An experiment is currently resolving it |
+| `unknown` | No relevant evidence — stated, not papered over |
+| `stopped` | Deliberately deprioritized after prior evidence |
+
+**`know` is reserved for first-party validation.** Transferred, Genome and
+research evidence cap at `suspect` however confident they look. This is
+enforced structurally in `deriveEvidenceState`, not by convention: it is the
+same guarantee as §25's *"a Battle result must never become universal advice
+merely because it was publicly successful,"* applied one layer up.
+
+### The action queue
+
+`AgentAction` is a proposal, never an act. Each one carries its risk class,
+its evidence references, the constraints that applied, whether a human is
+required, and an append-only `humanDecisions` trail. Approving, rejecting,
+deferring or requesting revision **adds** a decision; it never rewrites the
+proposal. A blocked action becomes `deferred` with a stated blocking reason
+rather than silently disappearing — an invisible refusal is
+indistinguishable from a bug.
+
+### Autonomy and the bounding rule
+
+Four levels: `advisor` → `copilot` → `operator` → `autonomous_lab`. New
+agents start at `copilot`, never higher.
+
+Risk is classified per action type, and `test_offer` **and any unrecognized
+action type** classify as `restricted` — unknown intent is treated as the
+most dangerous thing it could be. Restricted actions require approval at
+every autonomy level, including `autonomous_lab`, and are never handed off
+for execution at all.
+
+`AgentPermissionPolicy` types `spendActionsAllowed` and
+`offerChangesAllowed` as the literal `false`, so the compiler refuses code
+that would enable them. And `setAutonomyLevel` requires a **human** actor:
+the agent cannot widen its own latitude. The prohibitions are not
+discouragements; each is structurally unreachable.
+
+### The CreatorOS boundary
+
+`CreatorOsExecutionHandoff` is where the intelligence layer stops. Preparing
+one requires **both** an approved action **and** a permission that covers it
+— approval alone is not enough, because a workspace with publishing disabled
+must not dispatch however enthusiastically a human clicked approve. Nothing
+in this milestone calls a platform API, mints a token or schedules anything.
+Results come back through `recordExecutionResult`, which stores measurement
+*references* and leaves the measurements themselves in Milestone 6's stores.
+
+### The living prescription
+
+`LivingSocialPrescription` is versioned like the Genome: a rebuild marks the
+prior version `superseded` and retains it, and the new one carries a
+`changeSummary` naming what evidence arrived, what left, and why.
+
+Three habits keep it honest:
+
+- **A platform with no evidence is an experiment, not a recommendation** —
+  `testRequired: true`, `role: 'experimental'`, `evidenceState: 'unknown'`.
+- **Cadence comes from stated capacity, not evidence** —
+  `fromStatedCapacityOnly: true`, and it says so in the rationale.
+- **Unknowns are listed** with how to resolve them, rather than filled in
+  with confident-sounding advice.
+
+`PersonalizationMaturity` (`cold_start` → `transferred_intelligence` →
+`mixed_evidence` → `profile_informed` → `highly_profile_specific`) is
+derived from the evidence mix, **never from elapsed days**: a profile
+running many experiments matures faster than one posting quietly for months.
+
+### The decision cycle
+
+`runDecisionCycle` runs OBSERVE → DIAGNOSE → DECIDE → PROPOSE. It consumes
+Adaptive Strategy (§20) for next actions rather than deriving its own —
+every proposed action traces back to a `StrategyRecommendation` id — then
+applies mission, permission and experiment constraints on top.
+
+It is free to conclude that nothing should be done. `no_action_needed` is a
+first-class diagnostic, and the decision summary says so in words: *"Waiting
+for evidence is the correct move."*
+
+### Explainability and export
+
+`explainAgentAction` answers "why is the agent proposing this?" with the
+mission objective, evidence state, evidence references, constraints,
+limitations and open unknowns. Where peer evidence contributed, it is
+described in aggregate and **no other business is ever identified**.
+
+`getPrescriptionExport` produces a serializable snapshot for later PDF,
+email, portal or API delivery. Rendering is out of scope; the data is not.
+
+### Boundaries
+
+- **vs. Adaptive Strategy** — Adaptive decides what to do next; the agent
+  decides whether it is permitted, who must approve, and when it executes.
+  There is no second strategy engine.
+- **vs. Science** — Science evaluates evidence; the agent consumes verdicts
+  and never re-derives them.
+- **vs. Transfer / Genome** — both supply candidates capped at `suspect`.
+- **vs. CreatorOS** — the agent prepares; CreatorOS executes.
+- **vs. §24** — the static `SocialPrescription` remains the document form;
+  this is its living, versioned, decision-making successor.
+
+### Deterministic throughout
+
+No LLM in the decision cycle. No embeddings, no semantic similarity, no web
+search, no scraping. Identical state produces an identical plan.
+
+---
+
+## 27. The Complete Intelligence Loop
 
 ```
 Research  (StrategyClaim, StrategyPrinciple)
@@ -2069,7 +2231,7 @@ Intelligence Transfer  (is this evidence relevant to that profile?)
       |
 Social Genome  (conditional map of what works, for whom, when)
       |
-Social Prescription  (evidence-backed package for one business)
+Agentic Social Prescription  (per-customer agent: mission, queue, approvals)
       |
 CreatorOS execution  (publish, schedule, engage)
       |
@@ -2094,7 +2256,7 @@ authority they did not earn. At every boundary the same three rules hold:
 
 ---
 
-## 27. Development Milestones
+## 28. Development Milestones
 
 | Milestone | Scope | Status |
 | --- | --- | --- |
@@ -2108,14 +2270,14 @@ authority they did not earn. At every boundary the same three rules hold:
 | 8 — Adaptive Strategy Engine | Next-best-action recommendations, exploration/exploitation policy, constraints, content allocation, failure memory, information gain, strategy plans & versioning | Done |
 | 9 — Battle Engine | Seasons, protocols, competitors, divisions, matchups, pre-registration, lab/growth modes, configurable scoring with vanity guard, standings, predictions, milestones, evidence provenance | Done |
 | 10 — Intelligence Transfer | Explainable comparability across 17 dimensions, evidence hierarchy, negative transfer, cold start, hypothesis seeding | Done |
-| **11 — Social Genome** | Cross-profile conditional knowledge, context signatures, replication-gated lifecycle, contradiction retention, versioning, privacy-preserving queries | **COMPLETE** |
-| 12 — Agentic Social Prescription | Persistent, customer-specific agent state for Social Money Lab — requires a revised specification | Next |
+| 11 — Social Genome | Cross-profile conditional knowledge, context signatures, replication-gated lifecycle, contradiction retention, versioning, privacy-preserving queries | Done |
+| **12 — Agentic Social Prescription** | Persistent per-customer agent state, mission, evidence states, action queue with approval boundaries, living versioned prescription, CreatorOS handoff, change log | **COMPLETE** |
 
 Each milestone is additive and must leave CreatorOS execution untouched.
 
 ---
 
-## 28. Non-Goals
+## 29. Non-Goals
 
 Explicitly **not** part of Kairos Intelligence, now or later:
 
